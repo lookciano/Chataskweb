@@ -182,7 +182,7 @@ export const appRouter = router({
               chatRoomId: input.chatRoomId,
               creatorId: ctx.user.id,
               assignedToId: undefined,
-              assignedToName: task.assignedTo,
+              assignedToName: task.assignedTo || ctx.user.name,
               description: task.description,
               dueDate: dueDate,
               priority: task.priority,

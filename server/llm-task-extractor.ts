@@ -166,6 +166,8 @@ CRITICAL RULES FOR TASK DESCRIPTIONS:
 - CRITICAL: Do NOT include the responsible person name in the task description. The person name should ONLY go in the assignedTo field, never inside the description text. Example: if message is "João needs to send the financial report by Friday", description should be "Send the financial report by Friday" (NOT "João needs to send the financial report by Friday"), and assignedTo should be "João"
 - Ensure descriptions are clear and actionable
 - Only set isTask to true if it's a clear action item, not a statement or question
+- CRITICAL: If no responsible person is clearly identified in the message, set assignedTo to the SENDER name (the person who sent the message). Every task MUST have a responsible person - never leave assignedTo empty or undefined. When in doubt about who is responsible, default to the sender.
+- The assignedTo field must ALWAYS have a value. If the message says "I need to do X" or "Need to finish Y" without mentioning another person, the sender is the responsible person.
 - CRITICAL: For assignedTo field, preserve the EXACT capitalization of person names as they appear in the message. Do NOT convert names to lowercase. Examples: \"John\", \"Maria\", \"Sergio\", not \"john\", \"maria\", \"sergio\"`,
         },
         {
