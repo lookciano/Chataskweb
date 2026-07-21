@@ -46,13 +46,15 @@ Your task is to:
 3. Improve punctuation
 4. Ensure proper capitalization
 5. Maintain the original meaning and tone
-6. Keep the text concise but clear
+6. CRITICAL: Keep the text COMPLETE and detailed - do NOT summarize, shorten, or condense the original content
+7. Preserve ALL information from the original text - every detail must remain
+8. Only fix spelling and grammar, never remove or summarize content
 
 Return ONLY the corrected text, nothing else. No explanations or markdown.`,
         },
         {
           role: "user",
-          content: `Correct this Portuguese text for spelling, grammar, and clarity:
+          content: `Correct this Portuguese text for spelling, grammar, and clarity. DO NOT summarize or shorten the text - keep ALL original information complete:
 
 "${text}"`,
         },
@@ -136,6 +138,12 @@ For each task found, return a JSON array with the following structure:
 
 If no tasks are found, return: { "tasks": [] }
 
+CRITICAL RULES FOR TASK DETECTION:
+- DO NOT create tasks from QUESTIONS. If the message is a question (contains "?" especially at the end), set isTask to false. Questions are NOT tasks.
+- Examples of QUESTIONS (isTask: false): "Alguém pode enviar o relatório?", "Quando vai estar pronto?", "Você conseguiu fazer?", "Podemos marcar reunião?"
+- Examples of TASKS (isTask: true): "Preciso que envie o relatório até sexta", "Maria deve preparar a apresentação", "Fazer revisão do documento"
+- Only extract clear action items, requests, or commands - NOT questions or inquiries
+
 Guidelines:
 - Only extract clear action items or requests
 - Look for keywords like: need, should, must, please, can you, could you, by, until, deadline, etc.
@@ -145,6 +153,16 @@ Guidelines:
 - Extract dates from natural language like "by Friday", "next week", "tomorrow", "by EOD", "ate sexta", "proxima semana"
 - IMPORTANT: Do NOT include # symbols in task descriptions. Remove any # from the beginning or middle of descriptions.
 - Format descriptions clearly without special prefixes like # or Task numbers
+
+CRITICAL RULES FOR TASK DESCRIPTIONS:
+- The description MUST be COMPLETE and DETAILED - never summarize or shorten the task description
+- Include ALL relevant information from the original message in the description
+- The description should capture the full context of what needs to be done, not just a brief summary
+- Example BAD (too short): "Enviar relatório"
+- Example GOOD (complete): "Enviar o relatório financeiro do mês de julho para o departamento de contabilidade até sexta-feira"
+- Preserve all details: what, when, where, who, how, and any specific requirements mentioned
+- Do NOT use vague or generic descriptions - be specific and thorough
+- The description should be self-contained - someone reading just the description should understand exactly what needs to be done
 - Ensure descriptions are clear and actionable
 - Only set isTask to true if it's a clear action item, not a statement or question
 - CRITICAL: For assignedTo field, preserve the EXACT capitalization of person names as they appear in the message. Do NOT convert names to lowercase. Examples: \"John\", \"Maria\", \"Sergio\", not \"john\", \"maria\", \"sergio\"`,
