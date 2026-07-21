@@ -1,5 +1,6 @@
 import { eq, desc, and, gte, lte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
+import { createConnection } from "mysql2";
 import { InsertUser, users, chatRooms, messages, tasks, chatRoomParticipants, InsertChatRoom, InsertMessage, InsertTask, InsertChatRoomParticipant } from "../drizzle/schema";
 
 import { ENV } from './_core/env';
@@ -7,10 +8,17 @@ import { ENV } from './_core/env';
 let _db: ReturnType<typeof drizzle> | null = null;
 
 // Lazily create the drizzle instance so local tooling can run without a DB.
+// TiDB Cloud requires SSL connection.
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      const connection = createConnection({
+        uri: process.env.DATABASE_URL,
+        ssl: {
+          rejectUnauthorized: true,
+        },
+      });
+      _db = drizzle(connection);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
