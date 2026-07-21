@@ -7,4 +7,8 @@ export const ENV = {
   isProduction: process.env.NODE_ENV === "production",
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+  // OpenRouter LLM
+  openrouterApiKey: process.env.OPENROUTER_API_KEY ?? "",
+  openrouterModel: process.env.OPENROUTER_MODEL ?? "deepseek/deepseek-chat",
+  appUrl: process.env.APP_URL ?? "https://chataskweb.onrender.com",
 };
