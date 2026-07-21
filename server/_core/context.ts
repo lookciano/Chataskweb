@@ -1,6 +1,6 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import type { User } from "../../drizzle/schema";
-import { sdk } from "./sdk";
+import * as db from "../db";
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
@@ -8,21 +8,28 @@ export type TrpcContext = {
   user: User | null;
 };
 
+// Default anonymous user for open access (no login required)
+const DEFAULT_USER = {
+  id: 1,
+  openId: "anonymous",
+  name: "Usuário",
+  email: null,
+  loginMethod: null,
+  role: "admin" as const,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+  lastSignedIn: new Date(),
+  displayName: "Usuário",
+};
+
 export async function createContext(
   opts: CreateExpressContextOptions
 ): Promise<TrpcContext> {
-  let user: User | null = null;
-
-  try {
-    user = await sdk.authenticateRequest(opts.req);
-  } catch (error) {
-    // Authentication is optional for public procedures.
-    user = null;
-  }
-
+  // Open access: always return the default user
+  // No OAuth, no login required
   return {
     req: opts.req,
     res: opts.res,
-    user,
+    user: DEFAULT_USER as any,
   };
 }

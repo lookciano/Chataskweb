@@ -1,7 +1,7 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router, protectedProcedure } from "./_core/trpc";
+import { publicProcedure, router, publicProcedure } from "./_core/trpc";
 import { z } from "zod";
 import * as db from "./db";
 import { extractTasksFromMessage } from "./llm-task-extractor";
@@ -24,7 +24,7 @@ export const appRouter = router({
         success: true,
       } as const;
     }),
-    updateProfile: protectedProcedure
+    updateProfile: publicProcedure
       .input(z.object({
         displayName: z.string().min(1).max(255),
       }))
@@ -34,10 +34,10 @@ export const appRouter = router({
   }),
 
   chat: router({
-    rooms: protectedProcedure.query(async () => {
+    rooms: publicProcedure.query(async () => {
       return await db.getChatRooms();
     }),
-    createRoom: protectedProcedure
+    createRoom: publicProcedure
       .input(z.object({
         name: z.string().min(1),
         description: z.string().optional(),
@@ -54,14 +54,14 @@ export const appRouter = router({
         });
         return result;
       }),
-    getParticipants: protectedProcedure
+    getParticipants: publicProcedure
       .input(z.object({
         chatRoomId: z.number(),
       }))
       .query(async ({ input }) => {
         return await db.getParticipants(input.chatRoomId);
       }),
-    addParticipant: protectedProcedure
+    addParticipant: publicProcedure
       .input(z.object({
         chatRoomId: z.number(),
         userId: z.number(),
@@ -69,7 +69,7 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         return await db.addParticipant(input.chatRoomId, input.userId);
       }),
-    deleteRoom: protectedProcedure
+    deleteRoom: publicProcedure
       .input(z.object({
         chatRoomId: z.number(),
         password: z.string(),
@@ -83,14 +83,14 @@ export const appRouter = router({
   }),
 
   messages: router({
-    list: protectedProcedure
+    list: publicProcedure
       .input(z.object({
         chatRoomId: z.number(),
       }))
       .query(async ({ input }) => {
         return await db.getMessagesByChatRoom(input.chatRoomId);
       }),
-    send: protectedProcedure
+    send: publicProcedure
       .input(z.object({
         chatRoomId: z.number(),
         content: z.string().min(1),
@@ -106,7 +106,7 @@ export const appRouter = router({
         await db.addParticipant(input.chatRoomId, ctx.user.id);
         return message;
       }),
-    getReplies: protectedProcedure
+    getReplies: publicProcedure
       .input(z.object({
         messageId: z.number(),
       }))
@@ -116,28 +116,28 @@ export const appRouter = router({
   }),
 
   tasks: router({
-    list: protectedProcedure
+    list: publicProcedure
       .input(z.object({
         chatRoomId: z.number(),
       }))
       .query(async ({ input }) => {
         return await db.getTasksWithDetails(input.chatRoomId);
       }),
-    myTasks: protectedProcedure
+    myTasks: publicProcedure
       .input(z.object({
         status: z.string().optional(),
       }))
       .query(async ({ input, ctx }) => {
         return await db.getTasksByUser(ctx.user.id, input.status);
       }),
-    allTasks: protectedProcedure
+    allTasks: publicProcedure
       .input(z.object({
         status: z.string().optional(),
       }))
       .query(async ({ input }) => {
         return await db.getAllTasks(input.status);
       }),
-    updateStatus: protectedProcedure
+    updateStatus: publicProcedure
       .input(z.object({
         taskId: z.number(),
         status: z.enum(["pending", "completed"]),
@@ -145,7 +145,7 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         return await db.updateTaskStatus(input.taskId, input.status);
       }),
-    extractFromMessage: protectedProcedure
+    extractFromMessage: publicProcedure
       .input(z.object({
         messageContent: z.string().max(5000, "Mensagem muito longa"),
         chatRoomId: z.number(),
@@ -197,7 +197,7 @@ export const appRouter = router({
 
         return createdTasks;
       }),
-    interpretResponse: protectedProcedure
+    interpretResponse: publicProcedure
       .input(z.object({
         taskId: z.number(),
         responseContent: z.string(),
@@ -227,7 +227,7 @@ export const appRouter = router({
 
         return { success: true, updated: false };
       }),
-    detectCompletionInMessage: protectedProcedure
+    detectCompletionInMessage: publicProcedure
       .input(z.object({
         chatRoomId: z.number(),
         messageContent: z.string(),
@@ -281,7 +281,7 @@ export const appRouter = router({
         console.log("[DETECT_COMPLETION] Final result:", { success: true, updated });
         return { success: true, updated };
       }),
-    deleteTask: protectedProcedure
+    deleteTask: publicProcedure
       .input(z.object({
         taskId: z.number(),
       }))
@@ -296,7 +296,7 @@ export const appRouter = router({
         
         return { success: true, deletedTaskNumber: task.taskNumber };
       }),
-    detectAssignmentInMessage: protectedProcedure
+    detectAssignmentInMessage: publicProcedure
       .input(z.object({
         chatRoomId: z.number(),
         messageContent: z.string(),
@@ -361,7 +361,7 @@ export const appRouter = router({
         console.log("[ASSIGNMENT_DETECTOR] Final result:", { success: true, updated });
         return { success: true, updated };
       }),
-    validateParticipantNames: protectedProcedure
+    validateParticipantNames: publicProcedure
       .input(z.object({
         chatRoomId: z.number(),
       }))
@@ -372,14 +372,14 @@ export const appRouter = router({
         const report = await validateAndFixRoomTasks(input.chatRoomId, participantNames);
         return report;
       }),
-    getNameVariations: protectedProcedure
+    getNameVariations: publicProcedure
       .input(z.object({
         chatRoomId: z.number(),
       }))
       .query(async ({ input }) => {
         return await getParticipantNameVariations(input.chatRoomId);
       }),
-    cleanupAllParticipantNames: protectedProcedure
+    cleanupAllParticipantNames: publicProcedure
       .mutation(async () => {
         const rooms = await db.getChatRooms();
         const allReports = [];
@@ -412,7 +412,7 @@ export const appRouter = router({
           reports: allReports,
         };
       }),
-    debugExtraction: protectedProcedure
+    debugExtraction: publicProcedure
       .input(z.object({
         messageContent: z.string(),
         chatRoomId: z.number(),
@@ -433,7 +433,7 @@ export const appRouter = router({
           output: extracted,
         };
       }),
-    debugAssignment: protectedProcedure
+    debugAssignment: publicProcedure
       .input(z.object({
         messageContent: z.string(),
         chatRoomId: z.number(),
@@ -459,7 +459,7 @@ export const appRouter = router({
           participants: participants.map(p => ({ displayName: p.displayName, userName: p.userName })),
         };
       }),
-    updateDescription: protectedProcedure
+    updateDescription: publicProcedure
       .input(z.object({
         taskId: z.number(),
         description: z.string().min(1).max(2000, "Descrição muito longa"),
@@ -471,7 +471,7 @@ export const appRouter = router({
 
   // Weekly Summary
   summary: router({
-    generate: protectedProcedure
+    generate: publicProcedure
       .input(z.object({
         chatRoomId: z.number(),
         weekStart: z.date().optional(),
