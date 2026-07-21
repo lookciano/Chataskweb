@@ -1,0 +1,1 @@
+ALTER TABLE `chatRooms` ADD `invitePassword` varchar(255);
