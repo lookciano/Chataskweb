@@ -8,25 +8,25 @@ export type TrpcContext = {
   user: User | null;
 };
 
-// Default anonymous user for open access (no login required)
+// Default user for open access mode (no login required)
+// Uses the first user in the database (admin) as the default authenticated user
 const DEFAULT_USER = {
   id: 1,
   openId: "anonymous",
-  name: "Usuário",
+  name: "Luciano",
   email: null,
   loginMethod: null,
   role: "admin" as const,
   createdAt: new Date(),
   updatedAt: new Date(),
   lastSignedIn: new Date(),
-  displayName: "Usuário",
+  displayName: "Luciano",
+  avatarUrl: null,
 };
 
 export async function createContext(
   opts: CreateExpressContextOptions
 ): Promise<TrpcContext> {
-  // Open access: always return the default user
-  // No OAuth, no login required
   return {
     req: opts.req,
     res: opts.res,
