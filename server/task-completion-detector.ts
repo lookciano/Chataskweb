@@ -93,22 +93,29 @@ Detect any task status changes indicated in this message.`,
           name: "task_completions",
           strict: true,
           schema: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                taskNumber: { type: "number" },
-                detected: { type: "boolean" },
-                newStatus: {
-                  type: "string",
-                  enum: ["pending", "completed"],
+            type: "object",
+            properties: {
+              completions: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    taskNumber: { type: "number" },
+                    detected: { type: "boolean" },
+                    newStatus: {
+                      type: "string",
+                      enum: ["pending", "completed"],
+                    },
+                    confidence: { type: "number", minimum: 0, maximum: 1 },
+                    reason: { type: "string" },
+                  },
+                  required: ["taskNumber", "detected", "newStatus", "confidence", "reason"],
+                  additionalProperties: false,
                 },
-                confidence: { type: "number", minimum: 0, maximum: 1 },
-                reason: { type: "string" },
               },
-              required: ["taskNumber", "detected", "newStatus", "confidence", "reason"],
-              additionalProperties: false,
             },
+            required: ["completions"],
+            additionalProperties: false,
           },
         },
       },
@@ -130,13 +137,14 @@ Detect any task status changes indicated in this message.`,
 
     const parsed = JSON.parse(jsonContent);
     console.log("[TASK_COMPLETION_DETECTOR] LLM Response parsed:", JSON.stringify(parsed, null, 2));
-    if (!Array.isArray(parsed)) {
+    const completions = parsed.completions || parsed;
+    if (!Array.isArray(completions)) {
       console.log("[TASK_COMPLETION_DETECTOR] Response is not an array");
       return [];
     }
 
     // Filter for high confidence detections
-    const filtered = parsed.filter(
+    const filtered = completions.filter(
       (item: any) =>
         item.detected &&
         item.confidence >= 0.6 &&

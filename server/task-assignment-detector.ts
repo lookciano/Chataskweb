@@ -75,18 +75,25 @@ Detect any task assignments indicated in this message.`,
           name: "task_assignments",
           strict: true,
           schema: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                taskNumber: { type: "number" },
-                assignedTo: { type: "string" },
-                confidence: { type: "number", minimum: 0, maximum: 1 },
-                reason: { type: "string" },
+            type: "object",
+            properties: {
+              assignments: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    taskNumber: { type: "number" },
+                    assignedTo: { type: "string" },
+                    confidence: { type: "number", minimum: 0, maximum: 1 },
+                    reason: { type: "string" },
+                  },
+                  required: ["taskNumber", "assignedTo", "confidence", "reason"],
+                  additionalProperties: false,
+                },
               },
-              required: ["taskNumber", "assignedTo", "confidence", "reason"],
-              additionalProperties: false,
             },
+            required: ["assignments"],
+            additionalProperties: false,
           },
         },
       },
@@ -118,13 +125,14 @@ Detect any task assignments indicated in this message.`,
     const parsed = JSON.parse(jsonContent);
     console.log("[ASSIGNMENT_DETECTOR] Parsed response:", JSON.stringify(parsed, null, 2));
 
-    if (!Array.isArray(parsed)) {
+    const assignments = parsed.assignments || parsed;
+    if (!Array.isArray(assignments)) {
       console.log("[ASSIGNMENT_DETECTOR] Response is not an array");
       return [];
     }
 
     // Filter for high confidence detections
-    const filtered = parsed.filter(
+    const filtered = assignments.filter(
       (item: any) =>
         item.confidence >= 0.6 &&
         item.taskNumber &&
