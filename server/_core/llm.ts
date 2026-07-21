@@ -229,7 +229,8 @@ export async function invokeLLMStream(params: InvokeParams): Promise<ReadableStr
     stream: true,
   };
 
-  if (t  if (t  if (t  if (t  if (t  if (t  if (tols = tools;
+  if (tools && tools.length > 0) {
+    payload.tools = tools;
   }
 
   const normalizedToolChoice = normalizeToolChoice(toolChoice || tool_choice, tools);
