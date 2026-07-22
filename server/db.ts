@@ -471,20 +471,34 @@ export async function getAllTasks(status?: string) {
 export async function updateTaskStatus(taskId: number, status: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  
+
+  const now = new Date();
+  const isCompleted = status === "completed";
   return await db
     .update(tasks)
-    .set({ status: status as any, updatedAt: new Date() })
+    .set({
+      status: status as any,
+      updatedAt: now,
+      // Only stamp completion time when completing; clear if reopened.
+      completedAt: isCompleted ? now : null,
+    })
     .where(eq(tasks.id, taskId));
 }
 
 export async function updateTaskStatusAndResponse(taskId: number, status: string, responseMessageId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  
+
+  const now = new Date();
+  const isCompleted = status === "completed";
   return await db
     .update(tasks)
-    .set({ status: status as any, lastResponseMessageId: responseMessageId, updatedAt: new Date() })
+    .set({
+      status: status as any,
+      lastResponseMessageId: responseMessageId,
+      updatedAt: now,
+      completedAt: isCompleted ? now : null,
+    })
     .where(eq(tasks.id, taskId));
 }
 

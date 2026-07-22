@@ -66,6 +66,8 @@ export const tasks = mysqlTable("tasks", {
   status: mysqlEnum("status", ["pending", "completed", "cancelled"]).default("pending").notNull(),
   lastResponseMessageId: int("lastResponseMessageId"), // Link to last response that updated status
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+  /** Set when status becomes completed; cleared if reopened. */
+  completedAt: timestamp("completedAt"),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 

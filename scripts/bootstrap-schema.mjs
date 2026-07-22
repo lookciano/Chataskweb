@@ -15,6 +15,7 @@ async function ensureProductionSchema(connection) {
     `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assignedToName VARCHAR(255) NULL`,
     `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS taskNumber INT NULL`,
     `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS lastResponseMessageId INT NULL`,
+    `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completedAt TIMESTAMP NULL`,
     `ALTER TABLE messages ADD COLUMN IF NOT EXISTS replyToId INT NULL`,
     `ALTER TABLE chatRooms ADD COLUMN IF NOT EXISTS invitePassword VARCHAR(255) NULL`,
   ];
@@ -91,6 +92,18 @@ async function ensureProductionSchema(connection) {
     `);
   } catch (error) {
     console.warn("[SchemaBootstrap] assignedToId backfill skipped:", error.message || error);
+  }
+
+  try {
+    await connection.execute(`
+      UPDATE tasks
+      SET completedAt = updatedAt
+      WHERE status = 'completed'
+        AND completedAt IS NULL
+        AND updatedAt IS NOT NULL
+    `);
+  } catch (error) {
+    console.warn("[SchemaBootstrap] completedAt backfill skipped:", error.message || error);
   }
 
   console.log("[SchemaBootstrap] Done (data-preserving).");

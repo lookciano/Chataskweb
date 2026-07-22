@@ -47,7 +47,9 @@ interface Task {
   status: "pending" | "completed";
   dueDate?: Date;
   createdAt: Date;
-  /** Used as completion time when status becomes completed (backend updates this on status change). */
+  /** Precise completion timestamp when available. */
+  completedAt?: Date | null;
+  /** Fallback/sort helper; also stamped on other edits. */
   updatedAt?: Date;
   assignedToId?: number;
   assignedToName?: string | null;
@@ -295,6 +297,7 @@ export default function ChatApp() {
         tasksQuery.data.map((task: any) => ({
           ...task,
           createdAt: new Date(task.createdAt),
+          completedAt: task.completedAt ? new Date(task.completedAt) : null,
           updatedAt: task.updatedAt ? new Date(task.updatedAt) : undefined,
           dueDate: task.dueDate ? new Date(task.dueDate) : undefined,
         }))
@@ -525,16 +528,54 @@ export default function ChatApp() {
   // Tarefas filtradas
   const filteredTasks = getFilteredTasks(tasks);
 
-  /** Completed list only: most recently completed/updated first. Pending order unchanged. */
+  /** Completed list only: most recently completed first. Pending order unchanged. */
   const getCompletedTasksNewestFirst = (taskList: Task[]) =>
     [...taskList]
       .filter((t) => t.status === "completed")
       .sort((a, b) => {
-        const aTime = (a.updatedAt ?? a.createdAt).getTime();
-        const bTime = (b.updatedAt ?? b.createdAt).getTime();
+        const aTime = (a.completedAt ?? a.updatedAt ?? a.createdAt).getTime();
+        const bTime = (b.completedAt ?? b.updatedAt ?? b.createdAt).getTime();
         if (bTime !== aTime) return bTime - aTime;
         return b.id - a.id;
       });
+
+  const formatTaskDate = (value?: Date | null) => {
+    if (!value) return "—";
+    const d = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "2-digit",
+    });
+  };
+
+  /** Compact metadata row under task title (minimal, same pattern pending/completed). */
+  const renderTaskDates = (task: Task, opts?: { showCompleted?: boolean }) => {
+    const showCompleted = Boolean(opts?.showCompleted);
+    const completed =
+      task.completedAt ?? (task.status === "completed" ? task.updatedAt : null);
+
+    return (
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] leading-4 text-slate-500">
+        <span className="inline-flex items-center gap-1">
+          <span className="text-slate-400">Criada</span>
+          <span className="font-medium text-slate-600 tabular-nums">{formatTaskDate(task.createdAt)}</span>
+        </span>
+        {showCompleted && (
+          <>
+            <span className="text-slate-300" aria-hidden>
+              ·
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="text-slate-400">Concluída</span>
+              <span className="font-medium text-slate-600 tabular-nums">{formatTaskDate(completed)}</span>
+            </span>
+          </>
+        )}
+      </div>
+    );
+  };
 
   // Função para obter usuário por ID
   const getUserById = (userId: number) => {
@@ -1107,13 +1148,11 @@ export default function ChatApp() {
                                       <p className="text-sm font-medium text-slate-900"><span className="font-bold text-teal-600">Tarefa {task.taskNumber}:</span> {task.description}</p>
                                     )}
                                   </div>
-                                  <div className="flex items-center gap-2 text-xs text-slate-500">
+                                  <div className="flex flex-col gap-0.5">
                                     {task.assignedToName && (
-                                      <>
-                                        <span>👤 {task.assignedToName}</span>
-                                      </>
+                                      <span className="text-xs text-slate-500">👤 {task.assignedToName}</span>
                                     )}
-                                    <span>{new Date(task.createdAt).toLocaleDateString("pt-BR")}</span>
+                                    {renderTaskDates(task)}
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-3 shrink-0">
@@ -1164,11 +1203,15 @@ export default function ChatApp() {
                         getCompletedTasksNewestFirst(filteredTasks)
                           .map((task) => (
                             <Card key={task.id} className="p-3 opacity-70 border border-slate-200 shadow-none">
-                              <div className="flex items-start justify-between">
-                                <div className="flex-1">
-                                  <div className="flex items-center gap-2 mb-1">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 mb-0.5">
                                     <p className="text-sm font-medium text-slate-900 line-through"><span className="font-bold text-green-600">Tarefa {task.taskNumber}:</span> {task.description}</p>
                                   </div>
+                                  {task.assignedToName && (
+                                    <span className="text-xs text-slate-500">👤 {task.assignedToName}</span>
+                                  )}
+                                  {renderTaskDates(task, { showCompleted: true })}
                                 </div>
                                 <div className="flex items-center gap-2">
                                   <button
@@ -1933,23 +1976,19 @@ export default function ChatApp() {
                               👤 {task.assignedToName}
                             </p>
                           )}
-                          <div className="flex gap-2 mt-2 flex-wrap">
-                            <Badge className={getPriorityColor(task.priority)}>
-                              {task.priority}
-                            </Badge>
-                            {task.dueDate && (
-                              <Badge variant="outline" className="text-xs">
-                                {new Date(task.dueDate).toLocaleDateString(
-                                  "pt-BR"
-                                )}
+                          {renderTaskDates(task)}
+                          {(task.priority || task.dueDate) && (
+                            <div className="flex gap-2 mt-1.5 flex-wrap">
+                              <Badge className={getPriorityColor(task.priority)}>
+                                {task.priority}
                               </Badge>
-                            )}
-                            <Badge variant="outline" className="text-xs">
-                              {new Date(task.createdAt).toLocaleDateString(
-                                "pt-BR"
+                              {task.dueDate && (
+                                <Badge variant="outline" className="text-xs font-normal text-slate-600">
+                                  prazo {formatTaskDate(task.dueDate)}
+                                </Badge>
                               )}
-                            </Badge>
-                          </div>
+                            </div>
+                          )}
                         </div>
                         <button
                           onClick={() => {
@@ -2008,23 +2047,14 @@ export default function ChatApp() {
                               👤 {task.assignedToName}
                             </p>
                           )}
-                          <div className="flex gap-2 mt-2 flex-wrap">
-                            <Badge className={getPriorityColor(task.priority)}>
-                              {task.priority}
-                            </Badge>
-                            {task.dueDate && (
-                              <Badge variant="outline" className="text-xs">
-                                {new Date(task.dueDate).toLocaleDateString(
-                                  "pt-BR"
-                                )}
+                          {renderTaskDates(task, { showCompleted: true })}
+                          {task.priority && (
+                            <div className="flex gap-2 mt-1.5 flex-wrap">
+                              <Badge className={getPriorityColor(task.priority)}>
+                                {task.priority}
                               </Badge>
-                            )}
-                            <Badge variant="outline" className="text-xs">
-                              {new Date(task.createdAt).toLocaleDateString(
-                                "pt-BR"
-                              )}
-                            </Badge>
-                          </div>
+                            </div>
+                          )}
                         </div>
                         <button
                           onClick={() => {
