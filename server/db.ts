@@ -1,6 +1,6 @@
-import { eq, desc, and, gte, lte, or, isNotNull } from "drizzle-orm";
+import { eq, desc, and, gte, lte, or, isNotNull, lt, gt, asc } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { createPool, type Pool, type PoolConnection } from "mysql2/promise";
+import { createPool, type Pool } from "mysql2/promise";
 import {
   InsertUser,
   users,
@@ -305,15 +305,98 @@ export async function createMessage(input: InsertMessage) {
 }
 
 export async function getMessagesByChatRoom(chatRoomId: number, limitValue = 50) {
+  const page = await getMessagesPage({ chatRoomId, limit: limitValue });
+  // Legacy shape: newest-first (previous behaviour).
+  return [...page.items].reverse();
+}
+
+export type MessagesPage = {
+  /** Chronological order (oldest → newest) for the requested page. */
+  items: Array<typeof messages.$inferSelect>;
+  hasMore: boolean;
+  /** Oldest message id in this page (use as beforeId to load older). */
+  nextBeforeId: number | null;
+  nextBeforeCreatedAt: Date | null;
+};
+
+/**
+ * Cursor pagination for chat history.
+ * - Default: latest `limit` messages
+ * - beforeId+beforeCreatedAt: older page (infinite scroll up)
+ * - afterId+afterCreatedAt: newer messages only (polling)
+ */
+export async function getMessagesPage(params: {
+  chatRoomId: number;
+  limit?: number;
+  beforeId?: number;
+  beforeCreatedAt?: Date;
+  afterId?: number;
+  afterCreatedAt?: Date;
+}): Promise<MessagesPage> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  
-  return await db
+
+  const limit = Math.min(Math.max(params.limit ?? 50, 1), 100);
+  const roomClause = eq(messages.chatRoomId, params.chatRoomId);
+
+  // Polling path: only messages newer than cursor
+  if (params.afterId != null && params.afterCreatedAt) {
+    const afterAt = params.afterCreatedAt;
+    const afterId = params.afterId;
+    const rows = await db
+      .select()
+      .from(messages)
+      .where(
+        and(
+          roomClause,
+          or(
+            gt(messages.createdAt, afterAt),
+            and(eq(messages.createdAt, afterAt), gt(messages.id, afterId))
+          )
+        )
+      )
+      .orderBy(asc(messages.createdAt), asc(messages.id))
+      .limit(limit);
+
+    return {
+      items: rows,
+      hasMore: false,
+      nextBeforeId: rows[0]?.id ?? null,
+      nextBeforeCreatedAt: rows[0]?.createdAt ?? null,
+    };
+  }
+
+  // Initial or older page: fetch newest-first then reverse to chronological
+  const filters: any[] = [roomClause];
+  if (params.beforeId != null && params.beforeCreatedAt) {
+    const beforeAt = params.beforeCreatedAt;
+    const beforeId = params.beforeId;
+    filters.push(
+      or(
+        lt(messages.createdAt, beforeAt),
+        and(eq(messages.createdAt, beforeAt), lt(messages.id, beforeId))
+      )
+    );
+  }
+
+  const rowsDesc = await db
     .select()
     .from(messages)
-    .where(eq(messages.chatRoomId, chatRoomId))
-    .orderBy(desc(messages.createdAt))
-    .limit(limitValue);
+    .where(and(...filters))
+    .orderBy(desc(messages.createdAt), desc(messages.id))
+    .limit(limit + 1);
+
+  const hasMore = rowsDesc.length > limit;
+  const pageDesc = hasMore ? rowsDesc.slice(0, limit) : rowsDesc;
+  const items = [...pageDesc].reverse();
+  const oldest = items[0];
+
+  return {
+    items,
+    hasMore,
+    nextBeforeId: oldest?.id ?? null,
+    nextBeforeCreatedAt: oldest?.createdAt ?? null,
+  };
 }
 
 // Task queries

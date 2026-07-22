@@ -67,6 +67,11 @@ export default function ChatApp() {
   const [selectedRoom, setSelectedRoom] = useState<number | null>(null);
   const [messageInput, setMessageInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
+  const [hasMoreOlder, setHasMoreOlder] = useState(false);
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const messagesRef = useRef<Message[]>([]);
+  const loadingOlderRef = useRef(false);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [replyingToId, setReplyingToId] = useState<number | null>(null);
@@ -101,8 +106,13 @@ export default function ChatApp() {
   // Queries
   const roomsQuery = trpc.chat.rooms.useQuery();
   const messagesQuery = trpc.messages.list.useQuery(
-    { chatRoomId: selectedRoom || 0 },
-    { enabled: !!selectedRoom }
+    { chatRoomId: selectedRoom || 0, limit: 50 },
+    {
+      enabled: !!selectedRoom,
+      // Initial page only — older history + polling are manual to preserve infinite-scroll state.
+      refetchOnWindowFocus: false,
+      staleTime: 5_000,
+    }
   );
   const tasksQuery = trpc.tasks.list.useQuery(
     { chatRoomId: selectedRoom || 0 },
@@ -240,18 +250,41 @@ export default function ChatApp() {
     }
   }, [roomsQuery.data, selectedRoom, isMobile]);
 
-  // Update messages when query changes - REVERSED ORDER (newest at bottom)
+  // Keep ref aligned for polling matching without stale closures
   useEffect(() => {
-    if (messagesQuery.data) {
-      const reversedMessages = messagesQuery.data
-        .map((msg: any) => ({
-          ...msg,
-          createdAt: new Date(msg.createdAt),
-        }))
-        .reverse();
-      setMessages(reversedMessages);
-    }
-  }, [messagesQuery.data]);
+    messagesRef.current = messages;
+  }, [messages]);
+
+  const normalizeMessage = (msg: any): Message => ({
+    ...msg,
+    createdAt: new Date(msg.createdAt),
+  });
+
+  const mergeMessages = (current: Message[], incoming: Message[]) => {
+    if (!incoming.length) return current;
+    const map = new Map<number, Message>();
+    for (const m of current) map.set(m.id, m);
+    for (const m of incoming) map.set(m.id, m);
+    return Array.from(map.values()).sort(
+      (a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id - b.id
+    );
+  };
+
+  // Initial page (latest N) when room query settles — chronological order from API.
+  useEffect(() => {
+    if (!messagesQuery.data || !selectedRoom) return;
+    const page = messagesQuery.data as any;
+    // Backward-compat: old API returned Message[]; new API returns {items,hasMore,...}
+    const itemsRaw = Array.isArray(page) ? [...page].reverse() : page.items || [];
+    const items = itemsRaw.map(normalizeMessage);
+    setMessages(items);
+    setHasMoreOlder(Array.isArray(page) ? items.length >= 50 : Boolean(page.hasMore));
+    setIsLoadingMessages(false);
+  }, [messagesQuery.data, selectedRoom]);
+
+  useEffect(() => {
+    setIsLoadingMessages(Boolean(selectedRoom) && messagesQuery.isLoading);
+  }, [selectedRoom, messagesQuery.isLoading]);
 
   // Update tasks when query changes
   useEffect(() => {
@@ -318,7 +351,7 @@ export default function ChatApp() {
     }
   }, [messages, isUserNearBottom]);
 
-  // Add scroll listener
+  // Scroll listener: bottom tracking + infinite history at top
   useEffect(() => {
     const viewport = scrollContainerRef.current?.querySelector(
       '[data-radix-scroll-area-viewport]'
@@ -328,11 +361,14 @@ export default function ChatApp() {
 
     const handleScroll = () => {
       checkIfNearBottom();
+      if (viewport.scrollTop < 80) {
+        void loadOlderMessages();
+      }
     };
 
-    viewport.addEventListener('scroll', handleScroll);
+    viewport.addEventListener('scroll', handleScroll, { passive: true });
     return () => viewport.removeEventListener('scroll', handleScroll);
-  }, [messages]);
+  }, [messages, hasMoreOlder, selectedRoom]);
 
   // Detectar novas mensagens e enviar notificações
   useEffect(() => {
@@ -345,29 +381,92 @@ export default function ChatApp() {
       }
     }
   }, [messages.length, user?.displayName, notifyNewMessage, checkForNewMessages]);  
-  // Scroll ao selecionar uma sala
+  // Reset chat state when switching rooms
   useEffect(() => {
+    setMessages([]);
+    setHasMoreOlder(false);
+    setIsLoadingOlder(false);
+    loadingOlderRef.current = false;
     setHasUnreadBelow(false);
     setIsUserNearBottom(true);
     setFilterKeyword("");
     setFilterAssignedTo(null);
     setTimeout(() => {
-      scrollToBottom(true);
-    }, 100);
+      scrollToBottom(false);
+    }, 120);
   }, [selectedRoom]);
 
-  // Polling para sincronizar dados em tempo real
+  const loadOlderMessages = async () => {
+    if (!selectedRoom || loadingOlderRef.current || !hasMoreOlder) return;
+    const oldest = messagesRef.current[0];
+    if (!oldest) return;
+
+    const viewport = scrollContainerRef.current?.querySelector(
+      '[data-radix-scroll-area-viewport]'
+    ) as HTMLDivElement | null;
+    const prevHeight = viewport?.scrollHeight ?? 0;
+    const prevTop = viewport?.scrollTop ?? 0;
+
+    loadingOlderRef.current = true;
+    setIsLoadingOlder(true);
+    try {
+      const page: any = await utils.messages.list.fetch({
+        chatRoomId: selectedRoom,
+        limit: 50,
+        beforeId: oldest.id,
+        beforeCreatedAt: oldest.createdAt,
+      });
+      const items = (page.items || []).map(normalizeMessage);
+      setMessages((curr) => mergeMessages(curr, items));
+      setHasMoreOlder(Boolean(page.hasMore));
+      // Preserve visual position after prepending history
+      requestAnimationFrame(() => {
+        const vp = scrollContainerRef.current?.querySelector(
+          '[data-radix-scroll-area-viewport]'
+        ) as HTMLDivElement | null;
+        if (!vp) return;
+        const delta = vp.scrollHeight - prevHeight;
+        vp.scrollTop = prevTop + delta;
+      });
+    } catch (error) {
+      console.error('[Chat] failed to load older messages', error);
+    } finally {
+      loadingOlderRef.current = false;
+      setIsLoadingOlder(false);
+    }
+  };
+
+  // Poll only NEW messages + tasks/participants (does not wipe older history loaded by scroll)
   useEffect(() => {
     if (!selectedRoom) return;
-    
-    const interval = setInterval(() => {
-      messagesQuery.refetch();
-      tasksQuery.refetch();
-      participantsQuery.refetch();
-    }, 2000); // Atualizar a cada 2 segundos
-    
+
+    const interval = setInterval(async () => {
+      try {
+        const latest = messagesRef.current[messagesRef.current.length - 1];
+        if (latest) {
+          const page: any = await utils.messages.list.fetch({
+            chatRoomId: selectedRoom,
+            limit: 50,
+            afterId: latest.id,
+            afterCreatedAt: latest.createdAt,
+          });
+          const items = (page.items || []).map(normalizeMessage);
+          if (items.length) {
+            setMessages((curr) => mergeMessages(curr, items));
+          }
+        } else {
+          // No local messages yet — refresh initial page
+          await messagesQuery.refetch();
+        }
+        tasksQuery.refetch();
+        participantsQuery.refetch();
+      } catch {
+        // ignore transient poll errors
+      }
+    }, 2500);
+
     return () => clearInterval(interval);
-  }, [selectedRoom, messagesQuery, tasksQuery, participantsQuery]);
+  }, [selectedRoom, utils, messagesQuery, tasksQuery, participantsQuery]);
 
   // Sincronizar displayName do usuário ao carregar
   useEffect(() => {
@@ -517,10 +616,25 @@ export default function ChatApp() {
         scrollToBottom(true);
       }, 100);
 
-      // Refetch imediatamente
-      messagesQuery.refetch();
+      // Refresh tasks/participants; messages are polled without wiping older history
       tasksQuery.refetch();
       participantsQuery.refetch();
+      // Pull newest messages/after-send rows
+      try {
+        const latest = messagesRef.current[messagesRef.current.length - 1];
+        const page: any = await utils.messages.list.fetch({
+          chatRoomId,
+          limit: 20,
+          ...(latest
+            ? { afterId: latest.id, afterCreatedAt: latest.createdAt }
+            : {}),
+        });
+        const items = (page.items || []).map(normalizeMessage);
+        if (items.length) setMessages((curr) => mergeMessages(curr, items));
+        else if (!latest) await messagesQuery.refetch();
+      } catch {
+        await messagesQuery.refetch();
+      }
 
       // Executar análises de LLM em background (não-bloqueante)
       // Usar Promise.allSettled para executar em paralelo
@@ -569,8 +683,7 @@ export default function ChatApp() {
 
       // Executar em background sem esperar
       Promise.allSettled(llmTasks).then(() => {
-        // Refetch novamente após análises completarem
-        messagesQuery.refetch();
+        // Don't full-refetch messages (would drop infinite-scroll history).
         tasksQuery.refetch();
         participantsQuery.refetch();
       }).catch(() => {});
@@ -672,7 +785,6 @@ export default function ChatApp() {
       setShowProfileModal(false);
       await utils.auth.me.invalidate();
       participantsQuery.refetch();
-      messagesQuery.refetch();
       toast.success("Perfil atualizado com sucesso!", {
         duration: 3000,
       });
@@ -1081,7 +1193,27 @@ export default function ChatApp() {
                   className="h-full p-4"
                 >
                   <div className="space-y-4 max-w-full">
-                  {messages.length === 0 ? (
+                  <div className="flex flex-col items-center gap-2 py-2">
+                    {isLoadingOlder && (
+                      <div className="text-xs text-slate-500">Carregando histórico…</div>
+                    )}
+                    {!isLoadingOlder && hasMoreOlder && messages.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => void loadOlderMessages()}
+                        className="text-xs text-teal-700 hover:text-teal-800 underline"
+                      >
+                        Carregar mensagens antigas
+                      </button>
+                    )}
+                    {!hasMoreOlder && messages.length > 0 && (
+                      <div className="text-[11px] text-slate-400">Início da conversa</div>
+                    )}
+                    {isLoadingMessages && messages.length === 0 && (
+                      <div className="text-xs text-slate-500">Carregando mensagens…</div>
+                    )}
+                  </div>
+                  {messages.length === 0 && !isLoadingMessages ? (
                     <div className="flex items-center justify-center h-full text-slate-400">
                       <p>Nenhuma mensagem ainda. Comece a conversar!</p>
                     </div>
@@ -1539,7 +1671,27 @@ export default function ChatApp() {
                   className="h-full p-6"
                 >
                 <div className="space-y-4 max-w-4xl mx-auto">
-                  {messages.length === 0 ? (
+                  <div className="flex flex-col items-center gap-2 py-2">
+                    {isLoadingOlder && (
+                      <div className="text-xs text-slate-500">Carregando histórico…</div>
+                    )}
+                    {!isLoadingOlder && hasMoreOlder && messages.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => void loadOlderMessages()}
+                        className="text-xs text-teal-700 hover:text-teal-800 underline"
+                      >
+                        Carregar mensagens antigas
+                      </button>
+                    )}
+                    {!hasMoreOlder && messages.length > 0 && (
+                      <div className="text-[11px] text-slate-400">Início da conversa</div>
+                    )}
+                    {isLoadingMessages && messages.length === 0 && (
+                      <div className="text-xs text-slate-500">Carregando mensagens…</div>
+                    )}
+                  </div>
+                  {messages.length === 0 && !isLoadingMessages ? (
                     <div className="flex items-center justify-center h-full text-slate-400">
                       <p>Nenhuma mensagem ainda. Comece a conversar!</p>
                     </div>

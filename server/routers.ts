@@ -143,9 +143,27 @@ export const appRouter = router({
     list: publicProcedure
       .input(z.object({
         chatRoomId: z.number(),
+        limit: z.number().min(1).max(100).optional(),
+        /** Load messages older than this cursor (infinite scroll up). */
+        beforeId: z.number().optional(),
+        beforeCreatedAt: z.union([z.string(), z.date()]).optional(),
+        /** Load only messages newer than this cursor (polling). */
+        afterId: z.number().optional(),
+        afterCreatedAt: z.union([z.string(), z.date()]).optional(),
       }))
       .query(async ({ input }) => {
-        return await db.getMessagesByChatRoom(input.chatRoomId);
+        const toDate = (v: string | Date | undefined) => {
+          if (!v) return undefined;
+          return v instanceof Date ? v : new Date(v);
+        };
+        return await db.getMessagesPage({
+          chatRoomId: input.chatRoomId,
+          limit: input.limit,
+          beforeId: input.beforeId,
+          beforeCreatedAt: toDate(input.beforeCreatedAt),
+          afterId: input.afterId,
+          afterCreatedAt: toDate(input.afterCreatedAt),
+        });
       }),
     send: protectedProcedure
       .input(z.object({
