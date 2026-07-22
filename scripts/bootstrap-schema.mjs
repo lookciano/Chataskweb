@@ -18,6 +18,15 @@ async function ensureProductionSchema(connection) {
     `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completedAt TIMESTAMP NULL`,
     `ALTER TABLE messages ADD COLUMN IF NOT EXISTS replyToId INT NULL`,
     `ALTER TABLE chatRooms ADD COLUMN IF NOT EXISTS invitePassword VARCHAR(255) NULL`,
+    `CREATE TABLE IF NOT EXISTS messageReactions (
+      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      messageId INT NOT NULL,
+      userId INT NOT NULL,
+      emoji VARCHAR(32) NOT NULL DEFAULT 'thumbsup',
+      createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_message_user_emoji (messageId, userId, emoji),
+      KEY idx_messageReactions_messageId (messageId)
+    )`,
   ];
 
   for (const sql of statements) {

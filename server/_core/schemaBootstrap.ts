@@ -22,6 +22,16 @@ export async function ensureProductionSchema(connection: Connection): Promise<vo
     `ALTER TABLE messages ADD COLUMN IF NOT EXISTS replyToId INT NULL`,
     // Room invite password (optional legacy)
     `ALTER TABLE chatRooms ADD COLUMN IF NOT EXISTS invitePassword VARCHAR(255) NULL`,
+    // Thumbs-up / joinha reactions (new table — no impact on existing rows)
+    `CREATE TABLE IF NOT EXISTS messageReactions (
+      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      messageId INT NOT NULL,
+      userId INT NOT NULL,
+      emoji VARCHAR(32) NOT NULL DEFAULT 'thumbsup',
+      createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_message_user_emoji (messageId, userId, emoji),
+      KEY idx_messageReactions_messageId (messageId)
+    )`,
   ];
 
   for (const sql of statements) {

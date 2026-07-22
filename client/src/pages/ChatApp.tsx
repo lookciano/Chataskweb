@@ -18,7 +18,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { MessageCircle, CheckCircle2, Clock, AlertCircle, Plus, BarChart3, Reply, X, Menu, Settings, Users, ArrowLeft, Trash2, Sparkles, Edit2, MoreVertical } from "lucide-react";
+import { MessageCircle, CheckCircle2, Clock, AlertCircle, Plus, BarChart3, Reply, X, Menu, Settings, Users, ArrowLeft, Trash2, Sparkles, Edit2, MoreVertical, ThumbsUp } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -135,8 +135,28 @@ export default function ChatApp() {
     { enabled: !!selectedRoom }
   );
 
+  const reactionsQuery = trpc.messages.reactions.useQuery(
+    {
+      chatRoomId: selectedRoom || 0,
+      messageIds: messages.map((m) => m.id),
+    },
+    {
+      enabled: !!selectedRoom && messages.length > 0,
+      staleTime: 3_000,
+      refetchOnWindowFocus: false,
+    }
+  );
+
   // Utils
   const utils = trpc.useUtils();
+  const toggleThumbsUpMutation = trpc.messages.toggleThumbsUp.useMutation({
+    onSuccess: async () => {
+      await utils.messages.reactions.invalidate();
+    },
+    onError: (error) => {
+      toast.error(error.message || "Não foi possível reagir");
+    },
+  });
 
   // Mutations
   const sendMessageMutation = trpc.messages.send.useMutation();
@@ -514,6 +534,7 @@ export default function ChatApp() {
           const items = (page.items || []).map(normalizeMessage);
           if (items.length) {
             setMessages((curr) => mergeMessages(curr, items));
+            void utils.messages.reactions.invalidate();
           }
         } else {
           // No local messages yet — refresh initial page
@@ -821,6 +842,71 @@ export default function ChatApp() {
         return b.id - a.id;
       });
 
+
+  type ThumbsSummary = {
+    messageId: number;
+    count: number;
+    reactedByMe: boolean;
+    users: string[];
+  };
+
+  const getThumbsSummary = (messageId: number): ThumbsSummary => {
+    const rows = (reactionsQuery.data || []) as ThumbsSummary[];
+    const found = rows.find((r) => r.messageId === messageId);
+    return found || { messageId, count: 0, reactedByMe: false, users: [] };
+  };
+
+  const handleToggleThumbsUp = (messageId: number) => {
+    if (!user) {
+      toast.message("Selecione sua identidade para reagir");
+      return;
+    }
+    toggleThumbsUpMutation.mutate({ messageId });
+  };
+
+  const renderThumbsUpControls = (msg: Message) => {
+    const summary = getThumbsSummary(msg.id);
+    const mine = summary.reactedByMe;
+    const isOwn = msg.senderId === user?.id;
+    const title =
+      summary.users.length > 0
+        ? summary.users.join(", ")
+        : mine
+          ? "Remover joinha"
+          : "Dar joinha";
+
+    return (
+      <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleToggleThumbsUp(msg.id);
+          }}
+          disabled={toggleThumbsUpMutation.isPending}
+          title={title}
+          aria-label={mine ? "Remover joinha" : "Dar joinha"}
+          aria-pressed={mine}
+          className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors ${
+            mine
+              ? isOwn
+                ? "border-white/40 bg-white/15 text-white"
+                : "border-teal-300 bg-teal-50 text-teal-800"
+              : isOwn
+                ? "border-white/25 bg-white/10 text-teal-50 hover:bg-white/20"
+                : "border-slate-200 bg-white text-slate-500 hover:border-teal-300 hover:text-teal-700 hover:bg-teal-50"
+          }`}
+        >
+          <ThumbsUp className={`w-3 h-3 ${mine ? "fill-current" : ""}`} />
+          {summary.count > 0 ? (
+            <span className="tabular-nums">{summary.count}</span>
+          ) : (
+            <span className="opacity-80">Joinha</span>
+          )}
+        </button>
+      </div>
+    );
+  };
 
   const formatMessageTimestamp = (value: Date | string) => {
     const d = value instanceof Date ? value : new Date(value);
@@ -1669,7 +1755,7 @@ export default function ChatApp() {
                                 )}
                               </div>
                             )}
-                            <div className="flex items-center justify-between mt-2">
+                            <div className="flex items-center justify-between mt-2 gap-2">
                               <p
                                 className={`text-xs ${
                                   msg.senderId === user?.id
@@ -1677,23 +1763,50 @@ export default function ChatApp() {
                                     : "text-slate-500"
                                 }`}
                               >
-  {formatMessageTimestamp(msg.createdAt)}
+                                {formatMessageTimestamp(msg.createdAt)}
                               </p>
-                              <button
-                                onClick={() => {
-                                  setReplyingToId(msg.id);
-                                  setReplyingToContent(msg.content);
-                                }}
-                                className={`ml-2 p-1 rounded transition-opacity opacity-70 md:opacity-0 md:group-hover:opacity-100 ${
-                                  msg.senderId === user?.id
-                                    ? "text-teal-100/80 hover:text-white"
-                                    : "text-slate-400 hover:text-slate-600"
-                                }`}
-                                title="Responder"
-                              >
-                                <Reply className="w-3 h-3" />
-                              </button>
+                              <div className="flex items-center gap-0.5 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleThumbsUp(msg.id)}
+                                  disabled={toggleThumbsUpMutation.isPending}
+                                  className={`p-1 rounded transition-opacity ${
+                                    getThumbsSummary(msg.id).reactedByMe
+                                      ? msg.senderId === user?.id
+                                        ? "text-white"
+                                        : "text-teal-600"
+                                      : msg.senderId === user?.id
+                                        ? "text-teal-100/80 hover:text-white opacity-70 md:opacity-0 md:group-hover:opacity-100"
+                                        : "text-slate-400 hover:text-teal-600 opacity-70 md:opacity-0 md:group-hover:opacity-100"
+                                  }`}
+                                  title={getThumbsSummary(msg.id).reactedByMe ? "Remover joinha" : "Dar joinha"}
+                                  aria-label="Joinha"
+                                >
+                                  <ThumbsUp
+                                    className={`w-3.5 h-3.5 ${
+                                      getThumbsSummary(msg.id).reactedByMe ? "fill-current" : ""
+                                    }`}
+                                  />
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setReplyingToId(msg.id);
+                                    setReplyingToContent(msg.content);
+                                  }}
+                                  className={`p-1 rounded transition-opacity opacity-70 md:opacity-0 md:group-hover:opacity-100 ${
+                                    msg.senderId === user?.id
+                                      ? "text-teal-100/80 hover:text-white"
+                                      : "text-slate-400 hover:text-slate-600"
+                                  }`}
+                                  title="Responder"
+                                >
+                                  <Reply className="w-3 h-3" />
+                                </button>
+                              </div>
                             </div>
+                            {(getThumbsSummary(msg.id).count > 0 || getThumbsSummary(msg.id).reactedByMe) && (
+                              renderThumbsUpControls(msg)
+                            )}
                           </div>
                         </div>
                       </div>
@@ -2176,7 +2289,7 @@ export default function ChatApp() {
                                 )}
                               </div>
                             )}
-                            <div className="flex items-center justify-between mt-2">
+                            <div className="flex items-center justify-between mt-2 gap-2">
                               <p
                                 className={`text-xs ${
                                   msg.senderId === user?.id
@@ -2184,23 +2297,50 @@ export default function ChatApp() {
                                     : "text-slate-500"
                                 }`}
                               >
-  {formatMessageTimestamp(msg.createdAt)}
+                                {formatMessageTimestamp(msg.createdAt)}
                               </p>
-                              <button
-                                onClick={() => {
-                                  setReplyingToId(msg.id);
-                                  setReplyingToContent(msg.content);
-                                }}
-                                className={`ml-2 p-1 rounded transition-opacity opacity-70 md:opacity-0 md:group-hover:opacity-100 ${
-                                  msg.senderId === user?.id
-                                    ? "text-teal-100/80 hover:text-white"
-                                    : "text-slate-400 hover:text-slate-600"
-                                }`}
-                                title="Responder"
-                              >
-                                <Reply className="w-3 h-3" />
-                              </button>
+                              <div className="flex items-center gap-0.5 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleThumbsUp(msg.id)}
+                                  disabled={toggleThumbsUpMutation.isPending}
+                                  className={`p-1 rounded transition-opacity ${
+                                    getThumbsSummary(msg.id).reactedByMe
+                                      ? msg.senderId === user?.id
+                                        ? "text-white"
+                                        : "text-teal-600"
+                                      : msg.senderId === user?.id
+                                        ? "text-teal-100/80 hover:text-white opacity-70 md:opacity-0 md:group-hover:opacity-100"
+                                        : "text-slate-400 hover:text-teal-600 opacity-70 md:opacity-0 md:group-hover:opacity-100"
+                                  }`}
+                                  title={getThumbsSummary(msg.id).reactedByMe ? "Remover joinha" : "Dar joinha"}
+                                  aria-label="Joinha"
+                                >
+                                  <ThumbsUp
+                                    className={`w-3.5 h-3.5 ${
+                                      getThumbsSummary(msg.id).reactedByMe ? "fill-current" : ""
+                                    }`}
+                                  />
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setReplyingToId(msg.id);
+                                    setReplyingToContent(msg.content);
+                                  }}
+                                  className={`p-1 rounded transition-opacity opacity-70 md:opacity-0 md:group-hover:opacity-100 ${
+                                    msg.senderId === user?.id
+                                      ? "text-teal-100/80 hover:text-white"
+                                      : "text-slate-400 hover:text-slate-600"
+                                  }`}
+                                  title="Responder"
+                                >
+                                  <Reply className="w-3 h-3" />
+                                </button>
+                              </div>
                             </div>
+                            {(getThumbsSummary(msg.id).count > 0 || getThumbsSummary(msg.id).reactedByMe) && (
+                              renderThumbsUpControls(msg)
+                            )}
                           </div>
                         </div>
                       </div>

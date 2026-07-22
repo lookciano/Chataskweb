@@ -1,4 +1,4 @@
-import { eq, desc, and, gte, lte, or, isNotNull, lt, gt, asc } from "drizzle-orm";
+import { eq, desc, and, gte, lte, or, isNotNull, lt, gt, asc, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { createPool, type Pool } from "mysql2/promise";
 import {
@@ -8,6 +8,7 @@ import {
   messages,
   tasks,
   chatRoomParticipants,
+  messageReactions,
   InsertChatRoom,
   InsertMessage,
   InsertTask,
@@ -397,6 +398,145 @@ export async function getMessagesPage(params: {
     nextBeforeId: oldest?.id ?? null,
     nextBeforeCreatedAt: oldest?.createdAt ?? null,
   };
+}
+
+export const THUMBS_UP = "thumbsup" as const;
+
+export type MessageReactionSummary = {
+  messageId: number;
+  count: number;
+  reactedByMe: boolean;
+  /** Display names of people who reacted (capped). */
+  users: string[];
+};
+
+/** Batch reaction summaries for a list of message ids (thumbsup only for now). */
+export async function getThumbsUpSummaries(
+  messageIds: number[],
+  viewerUserId?: number | null
+): Promise<Map<number, MessageReactionSummary>> {
+  const map = new Map<number, MessageReactionSummary>();
+  if (!messageIds.length) return map;
+
+  const db = await getDb();
+  if (!db) return map;
+
+  const rows = await db
+    .select({
+      messageId: messageReactions.messageId,
+      userId: messageReactions.userId,
+      displayName: users.displayName,
+      name: users.name,
+    })
+    .from(messageReactions)
+    .leftJoin(users, eq(users.id, messageReactions.userId))
+    .where(
+      and(
+        eq(messageReactions.emoji, THUMBS_UP),
+        inArray(messageReactions.messageId, messageIds)
+      )
+    );
+
+  for (const id of messageIds) {
+    map.set(id, { messageId: id, count: 0, reactedByMe: false, users: [] });
+  }
+
+  for (const row of rows as Array<{
+    messageId: number;
+    userId: number;
+    displayName: string | null;
+    name: string | null;
+  }>) {
+    const entry = map.get(row.messageId);
+    if (!entry) continue;
+    entry.count += 1;
+    if (viewerUserId && row.userId === viewerUserId) entry.reactedByMe = true;
+    const label =
+      (row.displayName && row.displayName.trim()) ||
+      (row.name && String(row.name).trim()) ||
+      `User ${row.userId}`;
+    if (entry.users.length < 12) entry.users.push(label);
+  }
+
+  return map;
+}
+
+/** Toggle joinha (thumbsup). Returns current summary for that message. */
+export async function toggleThumbsUp(messageId: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Ensure message exists
+  const existingMsg = await db
+    .select({ id: messages.id })
+    .from(messages)
+    .where(eq(messages.id, messageId))
+    .limit(1);
+  if (!existingMsg[0]) throw new Error("Mensagem não encontrada");
+
+  const existing = await db
+    .select()
+    .from(messageReactions)
+    .where(
+      and(
+        eq(messageReactions.messageId, messageId),
+        eq(messageReactions.userId, userId),
+        eq(messageReactions.emoji, THUMBS_UP)
+      )
+    )
+    .limit(1);
+
+  if (existing[0]) {
+    await db
+      .delete(messageReactions)
+      .where(eq(messageReactions.id, existing[0].id));
+  } else {
+    try {
+      await db.insert(messageReactions).values({
+        messageId,
+        userId,
+        emoji: THUMBS_UP,
+      });
+    } catch (error: any) {
+      // Unique race: treat as already reacted
+      const msg = String(error?.message || error);
+      if (!msg.includes("Duplicate") && error?.code !== "ER_DUP_ENTRY") throw error;
+    }
+  }
+
+  const summaries = await getThumbsUpSummaries([messageId], userId);
+  return (
+    summaries.get(messageId) || {
+      messageId,
+      count: 0,
+      reactedByMe: false,
+      users: [] as string[],
+    }
+  );
+}
+
+/** Reactions for a whole room page (used by client after loading messages). */
+export async function listThumbsUpForRoom(params: {
+  chatRoomId: number;
+  messageIds?: number[];
+  viewerUserId?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  let ids = params.messageIds?.filter((n) => Number.isFinite(n)) || [];
+  if (!ids.length) {
+    // fallback: latest 100 message ids in room
+    const rows = await db
+      .select({ id: messages.id })
+      .from(messages)
+      .where(eq(messages.chatRoomId, params.chatRoomId))
+      .orderBy(desc(messages.createdAt))
+      .limit(200);
+    ids = rows.map((r: { id: number }) => r.id);
+  }
+  const map = await getThumbsUpSummaries(ids, params.viewerUserId);
+  return Array.from(map.values()).filter((s) => s.count > 0 || s.reactedByMe);
 }
 
 // Task queries

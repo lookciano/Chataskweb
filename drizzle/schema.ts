@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, uniqueIndex } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -51,6 +51,23 @@ export const messages = mysqlTable("messages", {
 
 export type Message = typeof messages.$inferSelect;
 export type InsertMessage = typeof messages.$inferInsert;
+
+/** Lightweight reactions on chat messages (currently only thumbs-up / joinha). */
+export const messageReactions = mysqlTable(
+  "messageReactions",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    messageId: int("messageId").notNull(),
+    userId: int("userId").notNull(),
+    /** Stable key — e.g. "thumbsup". */
+    emoji: varchar("emoji", { length: 32 }).default("thumbsup").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("uq_message_user_emoji").on(table.messageId, table.userId, table.emoji)]
+);
+
+export type MessageReaction = typeof messageReactions.$inferSelect;
+export type InsertMessageReaction = typeof messageReactions.$inferInsert;
 
 export const tasks = mysqlTable("tasks", {
   id: int("id").autoincrement().primaryKey(),

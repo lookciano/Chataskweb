@@ -190,6 +190,27 @@ export const appRouter = router({
       .query(async ({ input }) => {
         return await db.getMessageWithReplies(input.messageId);
       }),
+    /** Thumbs-up (joinha) summaries for visible messages in a room. */
+    reactions: publicProcedure
+      .input(z.object({
+        chatRoomId: z.number(),
+        messageIds: z.array(z.number()).max(300).optional(),
+      }))
+      .query(async ({ input, ctx }) => {
+        return await db.listThumbsUpForRoom({
+          chatRoomId: input.chatRoomId,
+          messageIds: input.messageIds,
+          viewerUserId: ctx.user?.id ?? null,
+        });
+      }),
+    /** Toggle joinha on a message (auth required). */
+    toggleThumbsUp: protectedProcedure
+      .input(z.object({
+        messageId: z.number(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        return await db.toggleThumbsUp(input.messageId, ctx.user.id);
+      }),
   }),
 
   tasks: router({
