@@ -23,6 +23,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useLocation } from "wouter";
@@ -539,6 +540,111 @@ export default function ChatApp() {
         return b.id - a.id;
       });
 
+
+  const formatMessageTimestamp = (value: Date | string) => {
+    const d = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(d.getTime())) return "";
+    const now = new Date();
+    const sameDay =
+      d.getFullYear() === now.getFullYear() &&
+      d.getMonth() === now.getMonth() &&
+      d.getDate() === now.getDate();
+    const time = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    if (sameDay) return time;
+    const date = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+    return `${date} ${time}`;
+  };
+
+  const currentIdentityLabel = user?.displayName || user?.name || "Usuário";
+  const currentIdentityInitial = (currentIdentityLabel || "U").slice(0, 1).toUpperCase();
+
+  const roomMenu = (roomId: number) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+          title="Opções da sala"
+          aria-label="Opções da sala"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <MoreVertical className="w-4 h-4" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-44">
+        <DropdownMenuItem
+          className="text-red-600 focus:text-red-700 focus:bg-red-50"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleDeleteRoom(roomId);
+          }}
+        >
+          <Trash2 className="w-4 h-4" />
+          Excluir sala
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const taskActionsMenu = (task: Task, opts?: { withEdit?: boolean }) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100"
+          title="Mais ações"
+          aria-label="Mais ações da tarefa"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <MoreVertical className="w-4 h-4" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-44">
+        {opts?.withEdit !== false && (
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.stopPropagation();
+              setEditingTaskId(task.id);
+              setEditingDescription(task.description);
+            }}
+          >
+            <Edit2 className="w-4 h-4" />
+            Editar
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem
+          className="text-red-600 focus:text-red-700 focus:bg-red-50"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (confirm(`Tem certeza que deseja excluir a Tarefa ${task.taskNumber}?`)) {
+              deleteTaskMutation.mutateAsync({ taskId: task.id });
+            }
+          }}
+        >
+          <Trash2 className="w-4 h-4" />
+          Excluir
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const identityChip = (
+    <button
+      type="button"
+      onClick={() => setShowProfileModal(true)}
+      className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-2.5 py-1.5 text-left hover:bg-slate-50 transition-colors max-w-[180px]"
+      title="Perfil e identidade"
+    >
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-teal-100 text-xs font-semibold text-teal-800">
+        {currentIdentityInitial}
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate text-xs font-medium text-slate-800">{currentIdentityLabel}</span>
+        <span className="block text-[10px] text-slate-400">Trocar / perfil</span>
+      </span>
+    </button>
+  );
+
   const formatTaskDate = (value?: Date | null) => {
     if (!value) return "—";
     const d = value instanceof Date ? value : new Date(value);
@@ -963,12 +1069,14 @@ export default function ChatApp() {
         <div className="bg-white border-b border-slate-200 p-4 flex items-center justify-between">
           {mobileView === "chat" && (
             <>
-              <div className="flex-1">
-                <h1 className="text-base font-semibold text-slate-900">
+              <div className="flex-1 min-w-0 pr-2">
+                <h1 className="text-base font-semibold text-slate-900 truncate">
                   {roomsQuery.data?.find((r: any) => r.id === selectedRoom)?.name || "Chat"}
                 </h1>
+                <p className="text-[11px] text-slate-500 truncate">{currentIdentityLabel}</p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex items-center gap-1 shrink-0">
+                {identityChip}
                 <button
                   onClick={() => setShowParticipantsModal(true)}
                   className="p-2.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
@@ -976,25 +1084,31 @@ export default function ChatApp() {
                 >
                   <Users className="w-5 h-5" />
                 </button>
-                <button
-                  onClick={() => setMobileView("rooms")}
-                  className="p-2.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
-                  title="Salas"
-                >
-                  <Menu className="w-5 h-5" />
-                </button>
               </div>
             </>
           )}
           {mobileView === "rooms" && (
             <>
-              <h1 className="text-lg font-bold text-slate-900 flex-1">Salas</h1>
-              <button
-                onClick={() => setMobileView("chat")}
-                className="p-2.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
-              >
-                <ArrowLeft className="w-5 h-5" />
-              </button>
+              <h1 className="text-base font-semibold text-slate-900 flex-1">Salas</h1>
+              <div className="flex items-center gap-1">
+                {identityChip}
+                <button
+                  onClick={() => setMobileView("chat")}
+                  className="p-2.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
+                  title="Voltar ao chat"
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
+              </div>
+            </>
+          )}
+          {mobileView === "tasks" && (
+            <>
+              <div className="flex-1 min-w-0">
+                <h1 className="text-base font-semibold text-slate-900">Tarefas</h1>
+                <p className="text-[11px] text-slate-500 truncate">{currentIdentityLabel}</p>
+              </div>
+              {identityChip}
             </>
           )}
         </div>
@@ -1003,7 +1117,7 @@ export default function ChatApp() {
         {mobileView === "rooms" && (
           <div className="flex-1 overflow-y-auto p-4 space-y-2">
             {roomsQuery.data?.map((room: any) => (
-              <div key={room.id} className="flex items-center gap-2">
+              <div key={room.id} className="flex items-center gap-1">
                 <button
                   onClick={() => {
                     setSelectedRoom(room.id);
@@ -1016,16 +1130,7 @@ export default function ChatApp() {
                     <span className="font-medium text-sm text-slate-900 truncate">{room.name}</span>
                   </div>
                 </button>
-                <button
-                  onClick={() => {
-                    setRoomToDelete(room.id);
-                    setShowDeleteRoomDialog(true);
-                  }}
-                  className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                  title="Deletar sala"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                {roomMenu(room.id)}
               </div>
             ))}
             <Button
@@ -1036,55 +1141,48 @@ export default function ChatApp() {
               <Plus className="w-4 h-4 mr-2" />
               Nova Sala
             </Button>
-            <Button
-              onClick={() => {
-                if (selectedRoom) {
-                  generateSummaryMutation.mutate({ chatRoomId: selectedRoom });
-                } else {
-                  toast.error("Selecione uma sala para gerar resumo");
-                }
-              }}
-              variant="outline"
-              className="w-full mt-2 border-slate-200 text-slate-700 hover:bg-slate-100"
-              disabled={isGeneratingSummary}
-            >
-              <Sparkles className="w-4 h-4 mr-2" />
-              {isGeneratingSummary ? "Gerando..." : "Resumo Semanal"}
-            </Button>
-            <Button
-              onClick={() => window.location.href = "/report"}
-              variant="outline"
-              className="w-full mt-2 border-slate-200 text-slate-700 hover:bg-slate-100"
-            >
-              <BarChart3 className="w-4 h-4 mr-2" />
-              Relatório
-            </Button>
-            <Button
-              onClick={() => setShowProfileModal(true)}
-              variant="outline"
-              className="w-full mt-2 border-slate-200 text-slate-700 hover:bg-slate-100"
-            >
-              <Settings className="w-4 h-4 mr-2" />
-              Perfil
-            </Button>
+            <div className="mt-4 rounded-xl border border-slate-200 bg-white p-2">
+              <p className="px-2 pb-1 pt-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                Mais
+              </p>
+              <Button
+                onClick={() => {
+                  if (selectedRoom) {
+                    generateSummaryMutation.mutate({ chatRoomId: selectedRoom });
+                  } else {
+                    toast.error("Selecione uma sala para gerar resumo");
+                  }
+                }}
+                variant="ghost"
+                className="w-full justify-start text-slate-700"
+                disabled={isGeneratingSummary}
+              >
+                <Sparkles className="w-4 h-4 mr-2" />
+                {isGeneratingSummary ? "Gerando..." : "Resumo Semanal"}
+              </Button>
+              <Button
+                onClick={() => (window.location.href = "/report")}
+                variant="ghost"
+                className="w-full justify-start text-slate-700"
+              >
+                <BarChart3 className="w-4 h-4 mr-2" />
+                Relatório
+              </Button>
+              <Button
+                onClick={() => setShowProfileModal(true)}
+                variant="ghost"
+                className="w-full justify-start text-slate-700"
+              >
+                <Settings className="w-4 h-4 mr-2" />
+                Perfil
+              </Button>
+            </div>
           </div>
         )}
 
         {/* Mobile Tasks View */}
         {mobileView === "tasks" && selectedRoom && (
           <div className="flex-1 overflow-hidden flex flex-col min-h-0">
-            <div className="border-b border-slate-200 bg-white p-4 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <img src="/favicon.ico" alt="Tarefas" className="w-6 h-6 rounded" />
-                <h2 className="font-semibold text-slate-900">Tarefas</h2>
-              </div>
-              <button
-                onClick={() => setMobileView("chat")}
-                className="text-slate-400 hover:text-slate-600"
-              >
-                <ArrowLeft className="w-5 h-5" />
-              </button>
-            </div>
             {/* Filtros Mobile */}
             <div className="border-b border-slate-200 bg-slate-50 p-3 space-y-3">
               <Input
@@ -1100,7 +1198,7 @@ export default function ChatApp() {
               >
                 <option value="">Todos os responsáveis</option>
                 {getUniqueResponsibles().map((r: any) => (
-                  <option key={r.id} value={r.name}>
+                  <option key={r.id ?? r.name} value={r.name}>
                     {r.name}
                   </option>
                 ))}
@@ -1121,7 +1219,7 @@ export default function ChatApp() {
                         filteredTasks
                           .filter((t) => t.status !== "completed")
                           .map((task) => (
-                            <div key={task.id} className="p-3 border border-slate-200 rounded-lg bg-white w-full shadow-none">
+                            <div key={task.id} className="group p-3 border border-slate-200 rounded-lg bg-white w-full shadow-none">
                               {/* Task Content */}
                               <div className="flex items-start justify-between gap-2">
                                 <div className="flex-1 min-w-0">
@@ -1155,7 +1253,7 @@ export default function ChatApp() {
                                     {renderTaskDates(task)}
                                   </div>
                                 </div>
-                                <div className="flex items-center gap-3 shrink-0">
+                                <div className="flex items-center gap-2 shrink-0">
                                   <input
                                     type="checkbox"
                                     checked={false}
@@ -1166,30 +1264,9 @@ export default function ChatApp() {
                                       })
                                     }
                                     className="w-4 h-4 rounded border-slate-300"
+                                    title="Concluir tarefa"
                                   />
-                                  <button
-                                    onClick={() => {
-                                      setEditingTaskId(task.id);
-                                      setEditingDescription(task.description);
-                                    }}
-                                    className="p-1.5 text-slate-500 hover:text-blue-600 transition-colors rounded hover:bg-blue-50"
-                                    title="Editar tarefa"
-                                  >
-                                    <Edit2 className="w-4 h-4" />
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      if (confirm(`Tem certeza que deseja excluir a Tarefa ${task.taskNumber}?`)) {
-                                        deleteTaskMutation.mutateAsync({
-                                          taskId: task.id,
-                                        });
-                                      }
-                                    }}
-                                    className="p-1.5 text-slate-400 hover:text-red-600 transition-colors rounded hover:bg-red-50"
-                                    title="Excluir tarefa"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
+                                  {taskActionsMenu(task)}
                                 </div>
                               </div>
                             </div>
@@ -1213,20 +1290,8 @@ export default function ChatApp() {
                                   )}
                                   {renderTaskDates(task, { showCompleted: true })}
                                 </div>
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    onClick={() => {
-                                      if (confirm(`Tem certeza que deseja excluir a Tarefa ${task.taskNumber}?`)) {
-                                        deleteTaskMutation.mutateAsync({
-                                          taskId: task.id,
-                                        });
-                                      }
-                                    }}
-                                    className="p-1 text-slate-400 hover:text-red-600 transition-colors"
-                                    title="Excluir tarefa"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {taskActionsMenu(task, { withEdit: false })}
                                 </div>
                               </div>
                             </Card>
@@ -1314,20 +1379,14 @@ export default function ChatApp() {
                                     : "text-slate-500"
                                 }`}
                               >
-                                {new Date(msg.createdAt).toLocaleTimeString(
-                                  "pt-BR",
-                                  {
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                  }
-                                )}
+  {formatMessageTimestamp(msg.createdAt)}
                               </p>
                               <button
                                 onClick={() => {
                                   setReplyingToId(msg.id);
                                   setReplyingToContent(msg.content);
                                 }}
-                                className={`ml-2 p-1 rounded transition-opacity ${
+                                className={`ml-2 p-1 rounded transition-opacity opacity-70 md:opacity-0 md:group-hover:opacity-100 ${
                                   msg.senderId === user?.id
                                     ? "text-teal-100/80 hover:text-white"
                                     : "text-slate-400 hover:text-slate-600"
@@ -1372,12 +1431,12 @@ export default function ChatApp() {
                 </div>
               )}
 
-              {/* Message Input - Always Visible */}
-              <div className="border-t border-slate-200 bg-white p-3 sm:p-4 flex-shrink-0">
+              {/* Message Input - sticky above tab bar */}
+              <div className="border-t border-slate-200 bg-white p-3 flex-shrink-0 sticky bottom-0 z-10">
                 {replyingToId && (
-                  <div className="mb-3 p-3 bg-slate-50 rounded-lg border border-slate-200 flex items-start justify-between">
-                    <div className="flex-1">
-                      <p className="text-xs text-slate-500 mb-1">Respondendo a:</p>
+                  <div className="mb-2 p-2.5 bg-slate-50 rounded-lg border border-slate-200 flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[11px] text-slate-500 mb-0.5">Respondendo a:</p>
                       <p className="text-sm text-slate-700 truncate">{replyingToContent}</p>
                     </div>
                     <button
@@ -1385,29 +1444,29 @@ export default function ChatApp() {
                         setReplyingToId(null);
                         setReplyingToContent("");
                       }}
-                      className="ml-2 text-slate-400 hover:text-slate-600"
+                      className="ml-2 p-1 text-slate-400 hover:text-slate-600"
                     >
                       <X className="w-4 h-4" />
                     </button>
                   </div>
                 )}
-                <div className="flex gap-2">
+                <div className="flex gap-2 items-center">
                   <Input
                     value={messageInput}
                     onChange={(e) => setMessageInput(e.target.value)}
-                    onKeyPress={(e) => {
+                    onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
                         handleSendMessage();
                       }
                     }}
                     placeholder="Digite sua mensagem..."
-                    className="flex-1"
+                    className="flex-1 min-h-11"
                   />
                   <Button
                     onClick={handleSendMessage}
                     disabled={!messageInput.trim()}
-                    className="bg-teal-600 hover:bg-teal-700 text-white shadow-none"
+                    className="bg-teal-600 hover:bg-teal-700 text-white shadow-none min-h-11 px-4"
                   >
                     Enviar
                   </Button>
@@ -1632,43 +1691,60 @@ export default function ChatApp() {
       <div style={{ width: `${widths.rooms}%` }} className="bg-white border-r border-slate-200 flex flex-col transition-all duration-75 overflow-hidden">
         {/* Adicionar cursor durante redimensionamento */}
         {isResizing && <div className="fixed inset-0 cursor-col-resize z-50" />}
-        <div className="p-5 border-b border-slate-200">
-          <div className="flex items-center gap-3 mb-3">
-            <img src="/favicon.ico" alt="Chat Atividades" className="w-10 h-10 rounded-lg" />
-            <div>
-              <h1 className="text-xl font-semibold text-slate-900 tracking-tight">Chat Atividades</h1>
-              <p className="text-xs text-slate-500">Gestão Inteligente</p>
+        <div className="p-5 border-b border-slate-200 space-y-3">
+          <div className="flex items-center gap-3">
+            <img src="/favicon.ico" alt="Chat Atividades" className="w-9 h-9 rounded-lg" />
+            <div className="min-w-0 flex-1">
+              <h1 className="text-lg font-semibold text-slate-900 tracking-tight truncate">Chat Atividades</h1>
+              <p className="text-[11px] text-slate-500">Gestão Inteligente</p>
             </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg"
+                  title="Mais"
+                  aria-label="Mais opções"
+                >
+                  <MoreVertical className="w-4 h-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onClick={() => (window.location.href = "/report")}>
+                  <BarChart3 className="w-4 h-4" />
+                  Relatório
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={isGeneratingSummary || !selectedRoom}
+                  onClick={() => {
+                    if (!selectedRoom) {
+                      toast.error("Selecione uma sala para gerar resumo");
+                      return;
+                    }
+                    generateSummaryMutation.mutate({ chatRoomId: selectedRoom });
+                  }}
+                >
+                  <Sparkles className="w-4 h-4" />
+                  {isGeneratingSummary ? "Gerando..." : "Resumo Semanal"}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setShowProfileModal(true)}>
+                  <Settings className="w-4 h-4" />
+                  Perfil
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
-          <div className="flex gap-2 mt-4">
-            <Button
-              onClick={() => window.location.href = "/report"}
-              variant="outline"
-              size="sm"
-              className="flex-1 border-slate-200 text-slate-700 hover:bg-slate-100"
-            >
-              <BarChart3 className="w-4 h-4 mr-1" />
-              Relatório
-            </Button>
-            <Button
-              onClick={() => setShowProfileModal(true)}
-              variant="outline"
-              size="sm"
-              className="flex-1 border-slate-200 text-slate-700 hover:bg-slate-100"
-            >
-              <Settings className="w-4 h-4 mr-1" />
-              Perfil
-            </Button>
-          </div>
+          {identityChip}
         </div>
 
         <ScrollArea className="flex-1 p-4">
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {roomsQuery.data?.map((room: any) => (
-              <div key={room.id} className="flex items-center gap-2">
+              <div key={room.id} className="group flex items-center gap-0.5">
                 <button
                   onClick={() => setSelectedRoom(room.id)}
-                  className={`flex-1 text-left px-4 py-3 rounded-lg transition-colors border border-transparent ${
+                  className={`flex-1 text-left px-3 py-2.5 rounded-lg transition-colors border border-transparent ${
                     selectedRoom === room.id
                       ? "bg-teal-50 border-slate-200 border-l-4 border-l-teal-500 text-teal-900 font-medium"
                       : "text-slate-700 hover:bg-slate-100"
@@ -1679,14 +1755,9 @@ export default function ChatApp() {
                     <span className="truncate text-sm">{room.name}</span>
                   </div>
                 </button>
-                <Button
-                  onClick={() => handleDeleteRoom(room.id)}
-                  variant="ghost"
-                  size="sm"
-                  className="text-slate-400 hover:text-red-600 hover:bg-red-50 px-2 flex-shrink-0"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
+                <div className="opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                  {roomMenu(room.id)}
+                </div>
               </div>
             ))}
           </div>
@@ -1712,13 +1783,16 @@ export default function ChatApp() {
         {selectedRoom ? (
           <>
             {/* Header with Participants Button */}
-            <div className="bg-white border-b border-slate-200 p-4 flex items-center justify-between">
-              <h2 className="text-base font-semibold text-slate-900">
-                {roomsQuery.data?.find((r: any) => r.id === selectedRoom)?.name}
-              </h2>
+            <div className="bg-white border-b border-slate-200 p-4 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold text-slate-900 truncate">
+                  {roomsQuery.data?.find((r: any) => r.id === selectedRoom)?.name}
+                </h2>
+                <p className="text-[11px] text-slate-500 truncate">Como {currentIdentityLabel}</p>
+              </div>
               <button
                 onClick={() => setShowParticipantsModal(true)}
-                className="flex items-center gap-2 px-3 py-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
+                className="flex items-center gap-2 px-3 py-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors shrink-0"
               >
                 <Users className="w-4 h-4" />
                 <span className="text-sm font-medium text-slate-700">{participants.length} participantes</span>
@@ -1797,20 +1871,14 @@ export default function ChatApp() {
                                     : "text-slate-500"
                                 }`}
                               >
-                                {new Date(msg.createdAt).toLocaleTimeString(
-                                  "pt-BR",
-                                  {
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                  }
-                                )}
+  {formatMessageTimestamp(msg.createdAt)}
                               </p>
                               <button
                                 onClick={() => {
                                   setReplyingToId(msg.id);
                                   setReplyingToContent(msg.content);
                                 }}
-                                className={`ml-2 p-1 rounded transition-opacity ${
+                                className={`ml-2 p-1 rounded transition-opacity opacity-70 md:opacity-0 md:group-hover:opacity-100 ${
                                   msg.senderId === user?.id
                                     ? "text-teal-100/80 hover:text-white"
                                     : "text-slate-400 hover:text-slate-600"
@@ -1878,7 +1946,7 @@ export default function ChatApp() {
                   <Input
                     value={messageInput}
                     onChange={(e) => setMessageInput(e.target.value)}
-                    onKeyPress={(e) => {
+                    onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
                         handleSendMessage();
@@ -1956,7 +2024,7 @@ export default function ChatApp() {
                   .map((task) => (
                     <Card
                       key={task.id}
-                      className="p-3 cursor-pointer hover:shadow-md transition-shadow"
+                      className="group p-3 cursor-pointer hover:bg-slate-50 transition-colors border border-slate-200 shadow-none"
                     >
                       <div className="flex items-start gap-3">
                         <button
@@ -1990,29 +2058,7 @@ export default function ChatApp() {
                             </div>
                           )}
                         </div>
-                        <button
-                          onClick={() => {
-                            setEditingTaskId(task.id);
-                            setEditingDescription(task.description);
-                          }}
-                          className="flex-shrink-0 text-slate-500 hover:text-blue-600 transition-colors"
-                          title="Editar tarefa"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (confirm(`Tem certeza que deseja excluir a Tarefa ${task.taskNumber}?`)) {
-                              deleteTaskMutation.mutateAsync({
-                                taskId: task.id,
-                              });
-                            }
-                          }}
-                          className="flex-shrink-0 text-slate-400 hover:text-red-600 transition-colors"
-                          title="Excluir tarefa"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {taskActionsMenu(task)}
                       </div>
                     </Card>
                   ))}
@@ -2027,7 +2073,7 @@ export default function ChatApp() {
                   .map((task) => (
                     <Card
                       key={task.id}
-                      className="p-3 opacity-70 border border-slate-200 shadow-none cursor-pointer hover:bg-slate-50 transition-colors"
+                      className="group p-3 opacity-70 border border-slate-200 shadow-none cursor-pointer hover:bg-slate-50 transition-colors"
                     >
                       <div className="flex items-start gap-3">
                         <button
@@ -2056,19 +2102,7 @@ export default function ChatApp() {
                             </div>
                           )}
                         </div>
-                        <button
-                          onClick={() => {
-                            if (confirm(`Tem certeza que deseja excluir a Tarefa ${task.taskNumber}?`)) {
-                              deleteTaskMutation.mutateAsync({
-                                taskId: task.id,
-                              });
-                            }
-                          }}
-                          className="flex-shrink-0 text-slate-400 hover:text-red-600 transition-colors"
-                          title="Excluir tarefa"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {taskActionsMenu(task, { withEdit: false })}
                       </div>
                     </Card>
                   ))}
