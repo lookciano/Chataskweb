@@ -1,0 +1,1 @@
+ALTER TABLE `messages` ADD `senderName` varchar(255);

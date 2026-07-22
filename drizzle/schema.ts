@@ -43,6 +43,7 @@ export const messages = mysqlTable("messages", {
   id: int("id").autoincrement().primaryKey(),
   chatRoomId: int("chatRoomId").notNull(),
   senderId: int("senderId").notNull(),
+  senderName: varchar("senderName", { length: 255 }), // Display name of sender at time of message
   content: text("content").notNull(),
   replyToId: int("replyToId"), // Reference to parent message for replies
   createdAt: timestamp("createdAt").defaultNow().notNull(),
