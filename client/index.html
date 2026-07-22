@@ -1,34 +1,77 @@
 <!doctype html>
-<html lang="en">
-
+<html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no" />
+      content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no"
+    />
     <title>Smart Task Chat</title>
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="icon" type="image/webp" href="/favicon.webp" />
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="apple-touch-icon" href="/favicon.png" />
-    <link rel="shortcut icon" href="/favicon.ico" />
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#4a9b8e" />
-    <meta name="description" content="Chat Atividades - Gestão Inteligente de Tarefas" />
-    <!-- THIS IS THE START OF A COMMENT BLOCK, BLOCK TO BE DELETED: Google Fonts here, example:
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    THIS IS THE END OF A COMMENT BLOCK, BLOCK TO BE DELETED -->
+    <meta name="description" content="Chat Task - Gestão Inteligente de Tarefas" />
+    <!-- Lightweight boot style so Safari never shows a pure white hang while JS loads -->
+    <style>
+      html,
+      body,
+      #root {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+      }
+      body {
+        background: #f8fafc;
+        color: #0f172a;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      #boot-fallback {
+        min-height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        text-align: center;
+      }
+      #boot-fallback .card {
+        max-width: 420px;
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 16px;
+        padding: 24px;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+      }
+      #boot-fallback .spinner {
+        width: 28px;
+        height: 28px;
+        margin: 0 auto 12px;
+        border-radius: 999px;
+        border: 3px solid #ccfbf1;
+        border-top-color: #0f766e;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
   </head>
-
-  <body style="margin: 0; padding: 0; width: 100%; height: 100vh; overflow: hidden;">
-    <div id="root" style="width: 100%; height: 100%; overflow: hidden;"></div>
+  <body>
+    <div id="root">
+      <div id="boot-fallback">
+        <div class="card">
+          <div class="spinner" aria-hidden="true"></div>
+          <strong>Carregando Chat Task…</strong>
+          <div style="margin-top: 8px; font-size: 14px; color: #475569">
+            Se esta tela ficar parada, atualize com Cmd+Shift+R.
+          </div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
-    <script
-      defer
-      src="%VITE_ANALYTICS_ENDPOINT%/umami"
-      data-website-id="%VITE_ANALYTICS_WEBSITE_ID%"></script>
   </body>
-
 </html>
