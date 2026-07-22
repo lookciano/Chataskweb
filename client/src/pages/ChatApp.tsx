@@ -923,21 +923,21 @@ export default function ChatApp() {
           {mobileView === "chat" && (
             <>
               <div className="flex-1">
-                <h1 className="text-lg font-bold text-slate-900">
+                <h1 className="text-base font-semibold text-slate-900">
                   {roomsQuery.data?.find((r: any) => r.id === selectedRoom)?.name || "Chat"}
                 </h1>
               </div>
               <div className="flex gap-2">
                 <button
                   onClick={() => setShowParticipantsModal(true)}
-                  className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+                  className="p-2.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
                   title="Participantes"
                 >
                   <Users className="w-5 h-5" />
                 </button>
                 <button
                   onClick={() => setMobileView("rooms")}
-                  className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+                  className="p-2.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
                   title="Salas"
                 >
                   <Menu className="w-5 h-5" />
@@ -950,7 +950,7 @@ export default function ChatApp() {
               <h1 className="text-lg font-bold text-slate-900 flex-1">Salas</h1>
               <button
                 onClick={() => setMobileView("chat")}
-                className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+                className="p-2.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
               >
                 <ArrowLeft className="w-5 h-5" />
               </button>
@@ -968,11 +968,11 @@ export default function ChatApp() {
                     setSelectedRoom(room.id);
                     setMobileView("chat");
                   }}
-                  className="flex-1 text-left px-4 py-3 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 transition-all"
+                  className="flex-1 text-left px-4 py-3 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 transition-colors shadow-none"
                 >
-                  <div className="flex items-center gap-2">
-                    <MessageCircle className="w-4 h-4 text-teal-600" />
-                    <span className="font-medium text-slate-900">{room.name}</span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <MessageCircle className="w-4 h-4 text-teal-600 shrink-0" />
+                    <span className="font-medium text-sm text-slate-900 truncate">{room.name}</span>
                   </div>
                 </button>
                 <button
@@ -980,16 +980,17 @@ export default function ChatApp() {
                     setRoomToDelete(room.id);
                     setShowDeleteRoomDialog(true);
                   }}
-                  className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                  className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                   title="Deletar sala"
                 >
-                  <Trash2 className="w-5 h-5" />
+                  <Trash2 className="w-4 h-4" />
                 </button>
               </div>
             ))}
             <Button
               onClick={handleCreateRoom}
-              className="w-full bg-teal-600 hover:bg-teal-700 text-white mt-4"
+              variant="outline"
+              className="w-full mt-4 border-slate-200 text-slate-700 hover:bg-slate-100"
             >
               <Plus className="w-4 h-4 mr-2" />
               Nova Sala
@@ -1003,7 +1004,7 @@ export default function ChatApp() {
                 }
               }}
               variant="outline"
-              className="w-full mt-2"
+              className="w-full mt-2 border-slate-200 text-slate-700 hover:bg-slate-100"
               disabled={isGeneratingSummary}
             >
               <Sparkles className="w-4 h-4 mr-2" />
@@ -1012,7 +1013,7 @@ export default function ChatApp() {
             <Button
               onClick={() => window.location.href = "/report"}
               variant="outline"
-              className="w-full mt-2"
+              className="w-full mt-2 border-slate-200 text-slate-700 hover:bg-slate-100"
             >
               <BarChart3 className="w-4 h-4 mr-2" />
               Relatório
@@ -1020,7 +1021,7 @@ export default function ChatApp() {
             <Button
               onClick={() => setShowProfileModal(true)}
               variant="outline"
-              className="w-full mt-2"
+              className="w-full mt-2 border-slate-200 text-slate-700 hover:bg-slate-100"
             >
               <Settings className="w-4 h-4 mr-2" />
               Perfil
@@ -1054,7 +1055,7 @@ export default function ChatApp() {
               <select
                 value={filterAssignedTo || ""}
                 onChange={(e) => setFilterAssignedTo(e.target.value || null)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white hover:bg-slate-50"
               >
                 <option value="">Todos os responsáveis</option>
                 {getUniqueResponsibles().map((r: any) => (
@@ -1079,7 +1080,7 @@ export default function ChatApp() {
                         filteredTasks
                           .filter((t) => t.status !== "completed")
                           .map((task) => (
-                            <div key={task.id} className="p-3 border border-slate-200 rounded-lg bg-white w-full">
+                            <div key={task.id} className="p-3 border border-slate-200 rounded-lg bg-white w-full shadow-none">
                               {/* Task Content */}
                               <div className="flex items-start justify-between gap-2">
                                 <div className="flex-1 min-w-0">
@@ -1162,7 +1163,7 @@ export default function ChatApp() {
                       ) : (
                         getCompletedTasksNewestFirst(filteredTasks)
                           .map((task) => (
-                            <Card key={task.id} className="p-3 opacity-60">
+                            <Card key={task.id} className="p-3 opacity-70 border border-slate-200 shadow-none">
                               <div className="flex items-start justify-between">
                                 <div className="flex-1">
                                   <div className="flex items-center gap-2 mb-1">
@@ -1205,7 +1206,7 @@ export default function ChatApp() {
                 <ScrollArea
                   className="h-full p-4"
                 >
-                  <div className="space-y-4 max-w-full">
+                  <div className="space-y-5 max-w-full">
                   <div className="flex flex-col items-center gap-2 py-2">
                     {isLoadingOlder && (
                       <div className="text-xs text-slate-500">Carregando histórico…</div>
@@ -1246,13 +1247,13 @@ export default function ChatApp() {
                           }`}
                         >
                           <div
-                            className={`max-w-xs px-4 py-3 rounded-lg ${
+                            className={`group max-w-[85%] sm:max-w-xs px-3.5 py-2.5 rounded-2xl shadow-none ${
                               msg.senderId === user?.id
-                                ? "bg-teal-600 text-white rounded-br-none"
-                                : "bg-white text-slate-900 border border-slate-200 rounded-bl-none"
+                                ? "bg-teal-600 text-white rounded-br-md"
+                                : "bg-white text-slate-900 border border-slate-200 rounded-bl-md"
                             }`}
                           >
-                            <p className="text-sm font-medium mb-1">
+                            <p className="text-sm font-medium mb-0.5 tracking-tight">
                               {getMessageSenderLabel(msg)}
                             </p>
                             {msg.replyToId && getRepliedMessage(msg.replyToId) && (
@@ -1261,13 +1262,13 @@ export default function ChatApp() {
                                 <p className="text-slate-700 break-words">{getRepliedMessage(msg.replyToId)?.content}</p>
                               </div>
                             )}
-                            <p className="text-sm break-words">{msg.content}</p>
+                            <p className="text-sm leading-relaxed break-words">{msg.content}</p>
                             <div className="flex items-center justify-between mt-2">
                               <p
                                 className={`text-xs ${
                                   msg.senderId === user?.id
-                                    ? "text-teal-100"
-                                    : "text-slate-400"
+                                    ? "text-teal-100/90"
+                                    : "text-slate-500"
                                 }`}
                               >
                                 {new Date(msg.createdAt).toLocaleTimeString(
@@ -1283,10 +1284,10 @@ export default function ChatApp() {
                                   setReplyingToId(msg.id);
                                   setReplyingToContent(msg.content);
                                 }}
-                                className={`ml-2 p-1 rounded hover:opacity-70 transition-opacity ${
+                                className={`ml-2 p-1 rounded transition-opacity ${
                                   msg.senderId === user?.id
-                                    ? "text-teal-100"
-                                    : "text-slate-400"
+                                    ? "text-teal-100/80 hover:text-white"
+                                    : "text-slate-400 hover:text-slate-600"
                                 }`}
                                 title="Responder"
                               >
@@ -1314,7 +1315,7 @@ export default function ChatApp() {
 
               {/* Unread Messages Indicator - Mobile */}
               {hasUnreadBelow && (
-                <div className="border-t border-slate-200 bg-teal-50 px-4 py-2 flex items-center justify-center">
+                <div className="border-t border-slate-200 bg-teal-50/80 px-4 py-1.5 flex items-center justify-center">
                   <button
                     onClick={() => {
                       setIsUserNearBottom(true);
@@ -1329,7 +1330,7 @@ export default function ChatApp() {
               )}
 
               {/* Message Input - Always Visible */}
-              <div className="border-t border-slate-200 bg-white p-4 flex-shrink-0">
+              <div className="border-t border-slate-200 bg-white p-3 sm:p-4 flex-shrink-0">
                 {replyingToId && (
                   <div className="mb-3 p-3 bg-slate-50 rounded-lg border border-slate-200 flex items-start justify-between">
                     <div className="flex-1">
@@ -1363,7 +1364,7 @@ export default function ChatApp() {
                   <Button
                     onClick={handleSendMessage}
                     disabled={!messageInput.trim()}
-                    className="bg-teal-600 hover:bg-teal-700 text-white"
+                    className="bg-teal-600 hover:bg-teal-700 text-white shadow-none"
                   >
                     Enviar
                   </Button>
@@ -1375,38 +1376,38 @@ export default function ChatApp() {
 
         {/* Mobile Bottom Navigation */}
         {isMobile && selectedRoom && (
-          <div className="border-t border-slate-200 bg-white flex gap-0 flex-shrink-0">
+          <div className="border-t border-slate-200 bg-white flex gap-0 flex-shrink-0 pb-[env(safe-area-inset-bottom)]">
             <button
               onClick={() => setMobileView("chat")}
-              className={`flex-1 py-3 px-4 text-center text-sm font-medium transition-colors ${
+              className={`flex-1 py-2.5 px-3 text-center text-xs font-medium transition-colors ${
                 mobileView === "chat"
                   ? "text-teal-600 border-t-2 border-teal-600"
-                  : "text-slate-600 hover:text-slate-900"
+                  : "text-slate-500 hover:text-slate-800 hover:bg-slate-50"
               }`}
             >
-              <MessageCircle className="w-5 h-5 mx-auto mb-1" />
+              <MessageCircle className="w-5 h-5 mx-auto mb-0.5" />
               Chat
             </button>
             <button
               onClick={() => setMobileView("tasks")}
-              className={`flex-1 py-3 px-4 text-center text-sm font-medium transition-colors ${
+              className={`flex-1 py-2.5 px-3 text-center text-xs font-medium transition-colors ${
                 mobileView === "tasks"
                   ? "text-teal-600 border-t-2 border-teal-600"
-                  : "text-slate-600 hover:text-slate-900"
+                  : "text-slate-500 hover:text-slate-800 hover:bg-slate-50"
               }`}
             >
-              <CheckCircle2 className="w-5 h-5 mx-auto mb-1" />
+              <CheckCircle2 className="w-5 h-5 mx-auto mb-0.5" />
               Tarefas
             </button>
             <button
               onClick={() => setMobileView("rooms")}
-              className={`flex-1 py-3 px-4 text-center text-sm font-medium transition-colors ${
+              className={`flex-1 py-2.5 px-3 text-center text-xs font-medium transition-colors ${
                 mobileView === "rooms"
                   ? "text-teal-600 border-t-2 border-teal-600"
-                  : "text-slate-600 hover:text-slate-900"
+                  : "text-slate-500 hover:text-slate-800 hover:bg-slate-50"
               }`}
             >
-              <Menu className="w-5 h-5 mx-auto mb-1" />
+              <Menu className="w-5 h-5 mx-auto mb-0.5" />
               Salas
             </button>
           </div>
@@ -1442,12 +1443,13 @@ export default function ChatApp() {
                 <Button
                   onClick={() => setShowCreateRoomDialog(false)}
                   variant="outline"
+                  className="border-slate-200 text-slate-700 hover:bg-slate-100"
                 >
                   Cancelar
                 </Button>
                 <Button
                   onClick={handleConfirmCreateRoom}
-                  className="bg-teal-600 hover:bg-teal-700 text-white"
+                  className="bg-teal-600 hover:bg-teal-700 text-white shadow-none"
                 >
                   Criar
                 </Button>
@@ -1478,6 +1480,7 @@ export default function ChatApp() {
                 <Button
                   onClick={() => setShowDeleteRoomDialog(false)}
                   variant="outline"
+                  className="border-slate-200 text-slate-700 hover:bg-slate-100"
                 >
                   Cancelar
                 </Button>
@@ -1497,7 +1500,7 @@ export default function ChatApp() {
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end z-50">
             <Card className="w-full rounded-t-2xl p-6 max-h-96 overflow-y-auto">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-bold text-slate-900">Participantes ({participants.length})</h3>
+                <h3 className="text-base font-semibold text-slate-900">Participantes ({participants.length})</h3>
                 <button
                   onClick={() => setShowParticipantsModal(false)}
                   className="text-slate-400 hover:text-slate-600"
@@ -1547,12 +1550,13 @@ export default function ChatApp() {
                     <Button
                       onClick={() => setShowProfileModal(false)}
                       variant="outline"
+                      className="border-slate-200 text-slate-700 hover:bg-slate-100"
                     >
                       Cancelar
                     </Button>
                     <Button
                       onClick={handleUpdateProfile}
-                      className="bg-teal-600 hover:bg-teal-700 text-white"
+                      className="bg-teal-600 hover:bg-teal-700 text-white shadow-none"
                     >
                       Salvar
                     </Button>
@@ -1560,6 +1564,7 @@ export default function ChatApp() {
                   <Button
                     type="button"
                     variant="outline"
+                    className="border-slate-200 text-slate-700 hover:bg-slate-100"
                     onClick={async () => {
                       await logout();
                       setShowProfileModal(false);
@@ -1584,12 +1589,12 @@ export default function ChatApp() {
       <div style={{ width: `${widths.rooms}%` }} className="bg-white border-r border-slate-200 flex flex-col transition-all duration-75 overflow-hidden">
         {/* Adicionar cursor durante redimensionamento */}
         {isResizing && <div className="fixed inset-0 cursor-col-resize z-50" />}
-        <div className="p-6 border-b border-slate-200">
+        <div className="p-5 border-b border-slate-200">
           <div className="flex items-center gap-3 mb-3">
             <img src="/favicon.ico" alt="Chat Atividades" className="w-10 h-10 rounded-lg" />
             <div>
-              <h1 className="text-2xl font-bold text-slate-900">Chat Atividades</h1>
-              <p className="text-sm text-slate-500">Gestão Inteligente</p>
+              <h1 className="text-xl font-semibold text-slate-900 tracking-tight">Chat Atividades</h1>
+              <p className="text-xs text-slate-500">Gestão Inteligente</p>
             </div>
           </div>
           <div className="flex gap-2 mt-4">
@@ -1597,7 +1602,7 @@ export default function ChatApp() {
               onClick={() => window.location.href = "/report"}
               variant="outline"
               size="sm"
-              className="flex-1"
+              className="flex-1 border-slate-200 text-slate-700 hover:bg-slate-100"
             >
               <BarChart3 className="w-4 h-4 mr-1" />
               Relatório
@@ -1606,7 +1611,7 @@ export default function ChatApp() {
               onClick={() => setShowProfileModal(true)}
               variant="outline"
               size="sm"
-              className="flex-1"
+              className="flex-1 border-slate-200 text-slate-700 hover:bg-slate-100"
             >
               <Settings className="w-4 h-4 mr-1" />
               Perfil
@@ -1620,24 +1625,24 @@ export default function ChatApp() {
               <div key={room.id} className="flex items-center gap-2">
                 <button
                   onClick={() => setSelectedRoom(room.id)}
-                  className={`flex-1 text-left px-4 py-3 rounded-lg transition-all ${
+                  className={`flex-1 text-left px-4 py-3 rounded-lg transition-colors border border-transparent ${
                     selectedRoom === room.id
-                      ? "bg-teal-50 border-l-4 border-teal-500 text-teal-900 font-medium"
+                      ? "bg-teal-50 border-slate-200 border-l-4 border-l-teal-500 text-teal-900 font-medium"
                       : "text-slate-700 hover:bg-slate-100"
                   }`}
                 >
-                  <div className="flex items-center gap-2">
-                    <MessageCircle className="w-4 h-4" />
-                    <span className="truncate">{room.name}</span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <MessageCircle className="w-4 h-4 shrink-0" />
+                    <span className="truncate text-sm">{room.name}</span>
                   </div>
                 </button>
                 <Button
                   onClick={() => handleDeleteRoom(room.id)}
                   variant="ghost"
                   size="sm"
-                  className="text-red-600 hover:bg-red-50 px-2 flex-shrink-0"
+                  className="text-slate-400 hover:text-red-600 hover:bg-red-50 px-2 flex-shrink-0"
                 >
-                  <Trash2 className="w-5 h-5" />
+                  <Trash2 className="w-4 h-4" />
                 </Button>
               </div>
             ))}
@@ -1647,7 +1652,8 @@ export default function ChatApp() {
         <div className="p-4 border-t border-slate-200 space-y-2">
           <Button
             onClick={handleCreateRoom}
-            className="w-full bg-teal-600 hover:bg-teal-700 text-white"
+            variant="outline"
+            className="w-full border-slate-200 text-slate-700 hover:bg-slate-100"
             size="sm"
           >
             <Plus className="w-4 h-4 mr-2" />
@@ -1664,15 +1670,15 @@ export default function ChatApp() {
           <>
             {/* Header with Participants Button */}
             <div className="bg-white border-b border-slate-200 p-4 flex items-center justify-between">
-              <h2 className="text-lg font-bold text-slate-900">
+              <h2 className="text-base font-semibold text-slate-900">
                 {roomsQuery.data?.find((r: any) => r.id === selectedRoom)?.name}
               </h2>
               <button
                 onClick={() => setShowParticipantsModal(true)}
-                className="flex items-center gap-2 px-3 py-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                className="flex items-center gap-2 px-3 py-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
               >
-                <Users className="w-5 h-5" />
-                <span className="text-sm font-medium">{participants.length} participantes</span>
+                <Users className="w-4 h-4" />
+                <span className="text-sm font-medium text-slate-700">{participants.length} participantes</span>
               </button>
             </div>
 
@@ -1683,7 +1689,7 @@ export default function ChatApp() {
                 <ScrollArea
                   className="h-full p-6"
                 >
-                <div className="space-y-4 max-w-4xl mx-auto">
+                <div className="space-y-5 max-w-4xl mx-auto">
                   <div className="flex flex-col items-center gap-2 py-2">
                     {isLoadingOlder && (
                       <div className="text-xs text-slate-500">Carregando histórico…</div>
@@ -1724,13 +1730,13 @@ export default function ChatApp() {
                           }`}
                         >
                           <div
-                            className={`max-w-md px-4 py-3 rounded-lg ${
+                            className={`group max-w-md px-3.5 py-2.5 rounded-2xl shadow-none ${
                               msg.senderId === user?.id
-                                ? "bg-teal-600 text-white rounded-br-none"
-                                : "bg-white text-slate-900 border border-slate-200 rounded-bl-none"
+                                ? "bg-teal-600 text-white rounded-br-md"
+                                : "bg-white text-slate-900 border border-slate-200 rounded-bl-md"
                             }`}
                           >
-                            <p className="text-sm font-medium mb-1">
+                            <p className="text-sm font-medium mb-0.5 tracking-tight">
                               {getMessageSenderLabel(msg)}
                             </p>
                             {msg.replyToId && getRepliedMessage(msg.replyToId) && (
@@ -1739,13 +1745,13 @@ export default function ChatApp() {
                                 <p className="text-slate-700 break-words">{getRepliedMessage(msg.replyToId)?.content}</p>
                               </div>
                             )}
-                            <p className="text-sm break-words">{msg.content}</p>
+                            <p className="text-sm leading-relaxed break-words">{msg.content}</p>
                             <div className="flex items-center justify-between mt-2">
                               <p
                                 className={`text-xs ${
                                   msg.senderId === user?.id
-                                    ? "text-teal-100"
-                                    : "text-slate-400"
+                                    ? "text-teal-100/90"
+                                    : "text-slate-500"
                                 }`}
                               >
                                 {new Date(msg.createdAt).toLocaleTimeString(
@@ -1761,10 +1767,10 @@ export default function ChatApp() {
                                   setReplyingToId(msg.id);
                                   setReplyingToContent(msg.content);
                                 }}
-                                className={`ml-2 p-1 rounded hover:opacity-70 transition-opacity ${
+                                className={`ml-2 p-1 rounded transition-opacity ${
                                   msg.senderId === user?.id
-                                    ? "text-teal-100"
-                                    : "text-slate-400"
+                                    ? "text-teal-100/80 hover:text-white"
+                                    : "text-slate-400 hover:text-slate-600"
                                 }`}
                                 title="Responder"
                               >
@@ -1792,7 +1798,7 @@ export default function ChatApp() {
 
               {/* Unread Messages Indicator */}
               {hasUnreadBelow && (
-                <div className="border-t border-slate-200 bg-teal-50 px-4 py-2 flex items-center justify-center">
+                <div className="border-t border-slate-200 bg-teal-50/80 px-4 py-1.5 flex items-center justify-center">
                   <button
                     onClick={() => {
                       setIsUserNearBottom(true);
@@ -1807,7 +1813,7 @@ export default function ChatApp() {
               )}
 
               {/* Message Input - Always Visible */}
-              <div className="border-t border-slate-200 bg-white p-4 flex-shrink-0">
+              <div className="border-t border-slate-200 bg-white p-3 sm:p-4 flex-shrink-0">
                 {replyingToId && (
                   <div className="mb-3 p-3 bg-slate-50 rounded-lg border border-slate-200 flex items-start justify-between">
                     <div className="flex-1">
@@ -1841,7 +1847,7 @@ export default function ChatApp() {
                   <Button
                     onClick={handleSendMessage}
                     disabled={!messageInput.trim()}
-                    className="bg-teal-600 hover:bg-teal-700 text-white"
+                    className="bg-teal-600 hover:bg-teal-700 text-white shadow-none"
                   >
                     Enviar
                   </Button>
@@ -1860,10 +1866,10 @@ export default function ChatApp() {
 
       {/* Tasks Panel - Desktop Only */}
       <div style={{ width: `${widths.tasks}%` }} className="bg-white flex flex-col max-h-screen transition-all duration-75 overflow-hidden">
-        <div className="p-6 border-b border-slate-200">
+        <div className="p-5 border-b border-slate-200">
           <div className="flex items-center gap-3">
             <img src="/favicon.ico" alt="Tarefas" className="w-8 h-8 rounded-lg" />
-            <h2 className="text-lg font-bold text-slate-900">Tarefas</h2>
+            <h2 className="text-base font-semibold text-slate-900">Tarefas</h2>
           </div>
         </div>
 
@@ -1878,7 +1884,7 @@ export default function ChatApp() {
           <select
             value={filterAssignedTo || ""}
             onChange={(e) => setFilterAssignedTo(e.target.value || null)}
-            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white hover:bg-slate-50"
           >
             <option value="">Todos os responsáveis</option>
             {getUniqueResponsibles().map((r: any) => (
@@ -1982,7 +1988,7 @@ export default function ChatApp() {
                   .map((task) => (
                     <Card
                       key={task.id}
-                      className="p-3 opacity-60 cursor-pointer hover:shadow-md transition-shadow"
+                      className="p-3 opacity-70 border border-slate-200 shadow-none cursor-pointer hover:bg-slate-50 transition-colors"
                     >
                       <div className="flex items-start gap-3">
                         <button
@@ -2047,7 +2053,7 @@ export default function ChatApp() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <Card className="p-6 w-96 max-w-full mx-4 max-h-96 overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-slate-900">Participantes ({participants.length})</h3>
+              <h3 className="text-base font-semibold text-slate-900">Participantes ({participants.length})</h3>
               <button
                 onClick={() => setShowParticipantsModal(false)}
                 className="text-slate-400 hover:text-slate-600"
@@ -2097,12 +2103,13 @@ export default function ChatApp() {
                   <Button
                     onClick={() => setShowProfileModal(false)}
                     variant="outline"
+                    className="border-slate-200 text-slate-700 hover:bg-slate-100"
                   >
                     Cancelar
                   </Button>
                   <Button
                     onClick={handleUpdateProfile}
-                    className="bg-teal-600 hover:bg-teal-700 text-white"
+                    className="bg-teal-600 hover:bg-teal-700 text-white shadow-none"
                   >
                     Salvar
                   </Button>
@@ -2110,6 +2117,7 @@ export default function ChatApp() {
                 <Button
                   type="button"
                   variant="outline"
+                  className="border-slate-200 text-slate-700 hover:bg-slate-100"
                   onClick={async () => {
                     await logout();
                     setShowProfileModal(false);
@@ -2156,12 +2164,13 @@ export default function ChatApp() {
             <Button
               onClick={() => setShowCreateRoomDialog(false)}
               variant="outline"
+              className="border-slate-200 text-slate-700 hover:bg-slate-100"
             >
               Cancelar
             </Button>
             <Button
               onClick={handleConfirmCreateRoom}
-              className="bg-teal-600 hover:bg-teal-700 text-white"
+              className="bg-teal-600 hover:bg-teal-700 text-white shadow-none"
             >
               Criar
             </Button>
@@ -2193,12 +2202,13 @@ export default function ChatApp() {
             <Button
               onClick={() => setShowDeleteRoomDialog(false)}
               variant="outline"
+              className="border-slate-200 text-slate-700 hover:bg-slate-100"
             >
               Cancelar
             </Button>
             <Button
               onClick={handleConfirmDeleteRoom}
-              className="bg-red-600 hover:bg-red-700 text-white"
+              className="bg-red-600 hover:bg-red-700 text-white shadow-none"
             >
               Excluir
             </Button>
