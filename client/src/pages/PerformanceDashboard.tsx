@@ -175,7 +175,7 @@ export default function PerformanceDashboard() {
               <SelectValue placeholder="Selecione uma sala" />
             </SelectTrigger>
             <SelectContent>
-              {rooms.map((room) => (
+              {rooms.map((room: any) => (
                 <SelectItem key={room.id} value={room.id.toString()}>
                   {room.name}
                 </SelectItem>

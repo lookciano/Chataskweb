@@ -256,7 +256,7 @@ export default function ProductivityReport() {
               <SelectValue placeholder="Selecione uma sala" />
             </SelectTrigger>
             <SelectContent>
-              {roomsQuery.data?.map((room) => (
+              {roomsQuery.data?.map((room: any) => (
                 <SelectItem key={room.id} value={room.id.toString()}>
                   {room.name}
                 </SelectItem>

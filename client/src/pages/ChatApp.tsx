@@ -62,7 +62,7 @@ interface Participant {
 }
 
 export default function ChatApp() {
-  const { user, loading } = useAuth();
+  const { user, loading, identities, needsIdentity, selectIdentity, selecting, logout, isAuthenticated } = useAuth();
   const { notifyNewMessage, checkForNewMessages, setLastMessageCount } = useMessageNotifications();
   const [selectedRoom, setSelectedRoom] = useState<number | null>(null);
   const [messageInput, setMessageInput] = useState("");
@@ -338,9 +338,10 @@ export default function ChatApp() {
   useEffect(() => {
     if (messages.length > 0 && checkForNewMessages(messages.length)) {
       const lastMessage = messages[messages.length - 1];
-      if (lastMessage.senderName && lastMessage.senderName !== user?.displayName) {
+      const senderLabel = lastMessage.senderName || getUserDisplayName(lastMessage.senderId);
+      if (lastMessage.senderId !== user?.id && senderLabel) {
         const preview = lastMessage.content.substring(0, 50);
-        notifyNewMessage(lastMessage.senderName, preview);
+        notifyNewMessage(senderLabel, preview);
       }
     }
   }, [messages.length, user?.displayName, notifyNewMessage, checkForNewMessages]);  
@@ -376,9 +377,15 @@ export default function ChatApp() {
   }, [user?.displayName]);
 
   // Função para obter nome do usuário
-  const getUserDisplayName = (userId: number): string => {
+  const getUserDisplayName = (userId: number, fallbackName?: string | null): string => {
+    if (fallbackName && fallbackName.trim()) return fallbackName.trim();
     const participant = participants.find(p => p.userId === userId);
-    return participant?.displayName || "Usuário";
+    return participant?.displayName || participant?.userName || "Usuário";
+  };
+
+  const getMessageSenderLabel = (msg: Message): string => {
+    if (user && msg.senderId === user.id) return "Você";
+    return getUserDisplayName(msg.senderId, msg.senderName);
   };
 
   // Função para obter a mensagem respondida
@@ -468,7 +475,6 @@ export default function ChatApp() {
     switch (status) {
       case "completed":
         return "Concluída";
-        return "Em Andamento";
       case "pending":
         return "Pendente";
       case "cancelled":
@@ -655,11 +661,16 @@ export default function ChatApp() {
 
   const handleUpdateProfile = async () => {
     if (!displayName.trim()) return;
+    if (!user) {
+      toast.error("Selecione sua identidade antes de atualizar o perfil.");
+      return;
+    }
     try {
       await updateProfileMutation.mutateAsync({
         displayName: displayName.trim(),
       });
       setShowProfileModal(false);
+      await utils.auth.me.invalidate();
       participantsQuery.refetch();
       messagesQuery.refetch();
       toast.success("Perfil atualizado com sucesso!", {
@@ -669,6 +680,18 @@ export default function ChatApp() {
       toast.error(`Erro ao atualizar perfil: ${error instanceof Error ? error.message : 'Desconhecido'}`, {
         duration: 3000,
       });
+    }
+  };
+
+  const handleSelectIdentity = async (userId: number) => {
+    try {
+      const selected = await selectIdentity(userId);
+      const label = selected.displayName || selected.name || "Usuário";
+      setDisplayName(label);
+      toast.success(`Identidade: ${label}`);
+      roomsQuery.refetch();
+    } catch (error) {
+      toast.error(`Erro ao selecionar identidade: ${error instanceof Error ? error.message : "Desconhecido"}`);
     }
   };
 
@@ -689,7 +712,6 @@ export default function ChatApp() {
     switch (status) {
       case "completed":
         return <CheckCircle2 className="w-4 h-4 text-green-600" />;
-        return <Clock className="w-4 h-4 text-teal-600" />;
       case "pending":
         return <AlertCircle className="w-4 h-4 text-orange-600" />;
       default:
@@ -708,6 +730,64 @@ export default function ChatApp() {
     );
   }
 
+  // Restore multi-user access without creating new people:
+  // each browser picks an EXISTING team identity from the database.
+  if (needsIdentity || !isAuthenticated || !user) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-teal-50 flex items-center justify-center p-4">
+        <Card className="w-full max-w-xl p-6 shadow-lg border-slate-200">
+          <div className="mb-6 text-center">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-teal-100 text-teal-700">
+              <Users className="h-6 w-6" />
+            </div>
+            <h1 className="text-2xl font-semibold text-slate-900">Quem está usando?</h1>
+            <p className="mt-2 text-sm text-slate-600">
+              Selecione sua identidade existente. Mensagens, tarefas e responsáveis históricos
+              serão preservados para as mesmas pessoas.
+            </p>
+          </div>
+
+          <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
+            {identities.length === 0 ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                Nenhum usuário encontrado na base. Verifique o <code>DATABASE_URL</code> no Render
+                e se a base TiDB ainda contém a tabela <code>users</code>.
+              </div>
+            ) : (
+              identities.map((identity) => (
+                <button
+                  key={identity.id}
+                  type="button"
+                  disabled={selecting}
+                  onClick={() => handleSelectIdentity(identity.id)}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-teal-400 hover:bg-teal-50 disabled:opacity-60"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-sm font-semibold text-white">
+                      {(identity.displayName || identity.name || "U").slice(0, 1).toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-slate-900">
+                        {identity.displayName || identity.name}
+                      </p>
+                      <p className="truncate text-xs text-slate-500">
+                        {identity.email || `ID ${identity.id}`}
+                      </p>
+                    </div>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+
+          {selecting && (
+            <p className="mt-4 text-center text-sm text-slate-500">Entrando...</p>
+          )}
+        </Card>
+      </div>
+    );
+  }
+
   // MOBILE VIEW
   if (isMobile) {
     return (
@@ -718,7 +798,7 @@ export default function ChatApp() {
             <>
               <div className="flex-1">
                 <h1 className="text-lg font-bold text-slate-900">
-                  {roomsQuery.data?.find(r => r.id === selectedRoom)?.name || "Chat"}
+                  {roomsQuery.data?.find((r: any) => r.id === selectedRoom)?.name || "Chat"}
                 </h1>
               </div>
               <div className="flex gap-2">
@@ -851,7 +931,7 @@ export default function ChatApp() {
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
               >
                 <option value="">Todos os responsáveis</option>
-                {getUniqueResponsibles().map((r) => (
+                {getUniqueResponsibles().map((r: any) => (
                   <option key={r.id} value={r.name}>
                     {r.name}
                   </option>
@@ -1028,7 +1108,7 @@ export default function ChatApp() {
                             }`}
                           >
                             <p className="text-sm font-medium mb-1">
-                              {msg.senderId === user?.id ? "Você" : getUserDisplayName(msg.senderId)}
+                              {getMessageSenderLabel(msg)}
                             </p>
                             {msg.replyToId && getRepliedMessage(msg.replyToId) && (
                               <div className="mb-2 p-2 bg-opacity-20 bg-slate-400 rounded border-l-2 border-slate-400 text-xs">
@@ -1314,18 +1394,34 @@ export default function ChatApp() {
                     className="w-full"
                   />
                 </div>
-                <div className="flex gap-2 justify-end">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                  Identidade atual: <span className="font-medium text-slate-900">{user?.displayName || user?.name}</span>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <div className="flex gap-2 justify-end">
+                    <Button
+                      onClick={() => setShowProfileModal(false)}
+                      variant="outline"
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      onClick={handleUpdateProfile}
+                      className="bg-teal-600 hover:bg-teal-700 text-white"
+                    >
+                      Salvar
+                    </Button>
+                  </div>
                   <Button
-                    onClick={() => setShowProfileModal(false)}
+                    type="button"
                     variant="outline"
+                    onClick={async () => {
+                      await logout();
+                      setShowProfileModal(false);
+                      toast.message("Selecione novamente quem está usando o app");
+                    }}
                   >
-                    Cancelar
-                  </Button>
-                  <Button
-                    onClick={handleUpdateProfile}
-                    className="bg-teal-600 hover:bg-teal-700 text-white"
-                  >
-                    Salvar
+                    Trocar identidade
                   </Button>
                 </div>
               </div>
@@ -1424,7 +1520,7 @@ export default function ChatApp() {
             {/* Header with Participants Button */}
             <div className="bg-white border-b border-slate-200 p-4 flex items-center justify-between">
               <h2 className="text-lg font-bold text-slate-900">
-                {roomsQuery.data?.find(r => r.id === selectedRoom)?.name}
+                {roomsQuery.data?.find((r: any) => r.id === selectedRoom)?.name}
               </h2>
               <button
                 onClick={() => setShowParticipantsModal(true)}
@@ -1470,7 +1566,7 @@ export default function ChatApp() {
                             }`}
                           >
                             <p className="text-sm font-medium mb-1">
-                              {msg.senderId === user?.id ? "Você" : getUserDisplayName(msg.senderId)}
+                              {getMessageSenderLabel(msg)}
                             </p>
                             {msg.replyToId && getRepliedMessage(msg.replyToId) && (
                               <div className="mb-2 p-2 bg-opacity-20 bg-slate-400 rounded border-l-2 border-slate-400 text-xs">
@@ -1620,7 +1716,7 @@ export default function ChatApp() {
             className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
           >
             <option value="">Todos os responsáveis</option>
-            {getUniqueResponsibles().map((r) => (
+            {getUniqueResponsibles().map((r: any) => (
               <option key={r.name} value={r.name}>
                 {r.name}
               </option>
@@ -1829,18 +1925,34 @@ export default function ChatApp() {
                   className="w-full"
                 />
               </div>
-              <div className="flex gap-2 justify-end">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                Identidade atual: <span className="font-medium text-slate-900">{user?.displayName || user?.name}</span>
+              </div>
+              <div className="flex flex-col gap-2">
+                <div className="flex gap-2 justify-end">
+                  <Button
+                    onClick={() => setShowProfileModal(false)}
+                    variant="outline"
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    onClick={handleUpdateProfile}
+                    className="bg-teal-600 hover:bg-teal-700 text-white"
+                  >
+                    Salvar
+                  </Button>
+                </div>
                 <Button
-                  onClick={() => setShowProfileModal(false)}
+                  type="button"
                   variant="outline"
+                  onClick={async () => {
+                    await logout();
+                    setShowProfileModal(false);
+                    toast.message("Selecione novamente quem está usando o app");
+                  }}
                 >
-                  Cancelar
-                </Button>
-                <Button
-                  onClick={handleUpdateProfile}
-                  className="bg-teal-600 hover:bg-teal-700 text-white"
-                >
-                  Salvar
+                  Trocar identidade
                 </Button>
               </div>
             </div>

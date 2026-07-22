@@ -1,9 +1,12 @@
-import { COOKIE_NAME } from "@shared/const";
+import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router, publicProcedure } from "./_core/trpc";
+import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import * as db from "./db";
+import { ENV } from "./_core/env";
+import { createLocalSessionToken } from "./_core/session";
 import { extractTasksFromMessage } from "./llm-task-extractor";
 import { interpretResponseForTaskUpdate } from "./llm-response-interpreter";
 import { detectTaskCompletionInMessage } from "./task-completion-detector";
@@ -17,6 +20,42 @@ export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
+    listIdentities: publicProcedure.query(async () => {
+      // Only existing DB people — preserves historical users/responsibles.
+      return await db.listSelectableUsers();
+    }),
+    selectIdentity: publicProcedure
+      .input(z.object({
+        userId: z.number().int().positive(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const user = await db.getUserById(input.userId);
+        if (!user) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Usuário não encontrado" });
+        }
+
+        // Guard: only allow selecting known team identities (participants or named users)
+        const selectable = await db.listSelectableUsers();
+        if (!selectable.some((u) => u.id === user.id)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Identidade não autorizada" });
+        }
+
+        const label = user.displayName || user.name || `User ${user.id}`;
+        const token = await createLocalSessionToken({
+          openId: user.openId,
+          name: label,
+          userId: user.id,
+        });
+
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.cookie(COOKIE_NAME, token, {
+          ...cookieOptions,
+          maxAge: ONE_YEAR_MS,
+        });
+
+        await db.touchUserLastSignedIn(user.id);
+        return user;
+      }),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
@@ -24,12 +63,30 @@ export const appRouter = router({
         success: true,
       } as const;
     }),
-    updateProfile: publicProcedure
+    updateProfile: protectedProcedure
       .input(z.object({
         displayName: z.string().min(1).max(255),
       }))
       .mutation(async ({ input, ctx }) => {
-        return await db.updateUserProfile(ctx.user.id, input.displayName);
+        // Rename only the signed-in person — never the hardcoded admin fallback.
+        await db.updateUserProfile(ctx.user.id, input.displayName.trim());
+        const updated = await db.getUserById(ctx.user.id);
+        if (!updated) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Usuário não encontrado" });
+        }
+
+        // Refresh JWT name claim so cookies stay consistent
+        const token = await createLocalSessionToken({
+          openId: updated.openId,
+          name: updated.displayName || updated.name || `User ${updated.id}`,
+          userId: updated.id,
+        });
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.cookie(COOKIE_NAME, token, {
+          ...cookieOptions,
+          maxAge: ONE_YEAR_MS,
+        });
+        return updated;
       }),
   }),
 
@@ -37,15 +94,15 @@ export const appRouter = router({
     rooms: publicProcedure.query(async () => {
       return await db.getChatRooms();
     }),
-    createRoom: publicProcedure
+    createRoom: protectedProcedure
       .input(z.object({
         name: z.string().min(1),
         description: z.string().optional(),
         password: z.string(),
       }))
       .mutation(async ({ input, ctx }) => {
-        if (input.password !== "12345") {
-          throw new Error("Senha incorreta");
+        if (input.password !== ENV.roomAdminPassword) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Senha incorreta" });
         }
         const result = await db.createChatRoom({
           name: input.name,
@@ -69,14 +126,14 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         return await db.addParticipant(input.chatRoomId, input.userId);
       }),
-    deleteRoom: publicProcedure
+    deleteRoom: protectedProcedure
       .input(z.object({
         chatRoomId: z.number(),
         password: z.string(),
       }))
       .mutation(async ({ input }) => {
-        if (input.password !== "12345") {
-          throw new Error("Senha incorreta");
+        if (input.password !== ENV.roomAdminPassword) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Senha incorreta" });
         }
         return await db.deleteChatRoom(input.chatRoomId);
       }),
@@ -90,16 +147,18 @@ export const appRouter = router({
       .query(async ({ input }) => {
         return await db.getMessagesByChatRoom(input.chatRoomId);
       }),
-    send: publicProcedure
+    send: protectedProcedure
       .input(z.object({
         chatRoomId: z.number(),
         content: z.string().min(1),
         replyToId: z.number().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
+        const senderName = db.resolveUserDisplayName(ctx.user);
         const message = await db.createMessage({
           chatRoomId: input.chatRoomId,
           senderId: ctx.user.id,
+          senderName,
           content: input.content,
           replyToId: input.replyToId,
         });
@@ -123,7 +182,7 @@ export const appRouter = router({
       .query(async ({ input }) => {
         return await db.getTasksWithDetails(input.chatRoomId);
       }),
-    myTasks: publicProcedure
+    myTasks: protectedProcedure
       .input(z.object({
         status: z.string().optional(),
       }))
@@ -137,7 +196,7 @@ export const appRouter = router({
       .query(async ({ input }) => {
         return await db.getAllTasks(input.status);
       }),
-    updateStatus: publicProcedure
+    updateStatus: protectedProcedure
       .input(z.object({
         taskId: z.number(),
         status: z.enum(["pending", "completed"]),
@@ -145,7 +204,7 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         return await db.updateTaskStatus(input.taskId, input.status);
       }),
-    extractFromMessage: publicProcedure
+    extractFromMessage: protectedProcedure
       .input(z.object({
         messageContent: z.string().max(5000, "Mensagem muito longa"),
         chatRoomId: z.number(),
@@ -153,11 +212,11 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         // Get room participants to map mentioned names
         const participants = await db.getParticipants(input.chatRoomId);
-        const participantNames = participants.map(p => p.displayName).filter(Boolean) as string[];
+        const participantNames = participants.map((p: any) => p.displayName).filter(Boolean) as string[];
         
         const extracted = await extractTasksFromMessage(
           input.messageContent,
-          ctx.user.name || "User",
+          db.resolveUserDisplayName(ctx.user),
           true,
           participantNames
         );
@@ -182,7 +241,7 @@ export const appRouter = router({
               chatRoomId: input.chatRoomId,
               creatorId: ctx.user.id,
               assignedToId: undefined,
-              assignedToName: task.assignedTo || ctx.user.name,
+              assignedToName: task.assignedTo || db.resolveUserDisplayName(ctx.user),
               description: task.description,
               dueDate: dueDate,
               priority: task.priority,
@@ -197,7 +256,7 @@ export const appRouter = router({
 
         return createdTasks;
       }),
-    interpretResponse: publicProcedure
+    interpretResponse: protectedProcedure
       .input(z.object({
         taskId: z.number(),
         responseContent: z.string(),
@@ -213,7 +272,7 @@ export const appRouter = router({
           task.description,
           input.responseContent,
           task.status,
-          ctx.user.name || "User"
+          db.resolveUserDisplayName(ctx.user)
         );
 
         if (update && update.confidence > 0.5) {
@@ -227,7 +286,7 @@ export const appRouter = router({
 
         return { success: true, updated: false };
       }),
-    detectCompletionInMessage: publicProcedure
+    detectCompletionInMessage: protectedProcedure
       .input(z.object({
         chatRoomId: z.number(),
         messageContent: z.string(),
@@ -281,7 +340,7 @@ export const appRouter = router({
         console.log("[DETECT_COMPLETION] Final result:", { success: true, updated });
         return { success: true, updated };
       }),
-    deleteTask: publicProcedure
+    deleteTask: protectedProcedure
       .input(z.object({
         taskId: z.number(),
       }))
@@ -296,7 +355,7 @@ export const appRouter = router({
         
         return { success: true, deletedTaskNumber: task.taskNumber };
       }),
-    detectAssignmentInMessage: publicProcedure
+    detectAssignmentInMessage: protectedProcedure
       .input(z.object({
         chatRoomId: z.number(),
         messageContent: z.string(),
@@ -419,7 +478,7 @@ export const appRouter = router({
       }))
       .query(async ({ input }) => {
         const participants = await db.getParticipants(input.chatRoomId);
-        const participantNames = participants.map(p => p.displayName).filter(Boolean) as string[];
+        const participantNames = participants.map((p: any) => p.displayName).filter(Boolean) as string[];
         
         const extracted = await extractTasksFromMessage(
           input.messageContent,
@@ -456,10 +515,10 @@ export const appRouter = router({
         return {
           messageContent: input.messageContent,
           assignments,
-          participants: participants.map(p => ({ displayName: p.displayName, userName: p.userName })),
+          participants: participants.map((p: any) => ({ displayName: p.displayName, userName: p.userName })),
         };
       }),
-    updateDescription: publicProcedure
+    updateDescription: protectedProcedure
       .input(z.object({
         taskId: z.number(),
         description: z.string().min(1).max(2000, "Descrição muito longa"),

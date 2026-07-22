@@ -1,0 +1,27 @@
+# Optional Blueprint — if you manage the service via Render Blueprints.
+# Otherwise keep using the existing Web Service and just set the env vars below.
+services:
+  - type: web
+    name: chataskweb
+    runtime: node
+    plan: free
+    buildCommand: pnpm install --frozen-lockfile && pnpm build
+    startCommand: pnpm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_MODEL
+        value: deepseek/deepseek-chat
+      - key: APP_URL
+        sync: false
+      - key: ROOM_ADMIN_PASSWORD
+        sync: false

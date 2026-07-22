@@ -32,11 +32,13 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 async function startServer() {
   const app = express();
   const server = createServer(app);
+  // Render / reverse proxies terminate TLS; needed for secure cookies + correct protocol.
+  app.set("trust proxy", 1);
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerStorageProxy(app);
-  // registerOAuthRoutes(app); // Disabled - open access
+  // Local JWT identity replaces Manus OAuth (select existing team member).
   // tRPC API
   app.use(
     "/api/trpc",
@@ -56,15 +58,20 @@ async function startServer() {
     serveStatic(app);
   }
 
-  const preferredPort = parseInt(process.env.PORT || "3000");
-  const port = await findAvailablePort(preferredPort);
+  const preferredPort = parseInt(process.env.PORT || "3000", 10);
+  // On Render/production the platform injects PORT and health-checks that exact port.
+  // Never silently switch ports in production or the service will fail health checks.
+  const port =
+    process.env.NODE_ENV === "production"
+      ? preferredPort
+      : await findAvailablePort(preferredPort);
 
   if (port !== preferredPort) {
     console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
   }
 
-  server.listen(port, () => {
-    console.log(`Server running on http://localhost:${port}/`);
+  server.listen(port, "0.0.0.0", () => {
+    console.log(`Server running on http://0.0.0.0:${port}/`);
   });
 }
 

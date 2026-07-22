@@ -111,7 +111,7 @@ Detect any task assignments indicated in this message.`,
     if (typeof content === "string") {
       jsonContent = content;
     } else if (Array.isArray(content)) {
-      const textItem = content.find((c: any) => c.type === "text") as any;
+      const textItem = (content as any[]).find((c: any) => c.type === "text") as any;
       if (!textItem || !textItem.text) {
         console.log("[ASSIGNMENT_DETECTOR] No text in content array");
         return [];

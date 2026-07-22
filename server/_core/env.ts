@@ -1,5 +1,5 @@
 export const ENV = {
-  appId: process.env.VITE_APP_ID ?? "",
+  appId: process.env.VITE_APP_ID ?? "chataskweb",
   cookieSecret: process.env.JWT_SECRET ?? "",
   databaseUrl: process.env.DATABASE_URL ?? "",
   oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",
@@ -11,4 +11,5 @@ export const ENV = {
   openrouterApiKey: process.env.OPENROUTER_API_KEY ?? "",
   openrouterModel: process.env.OPENROUTER_MODEL ?? "deepseek/deepseek-chat",
   appUrl: process.env.APP_URL ?? "https://chataskweb.onrender.com",
+  roomAdminPassword: process.env.ROOM_ADMIN_PASSWORD ?? "12345",
 };

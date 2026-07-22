@@ -1,24 +1,73 @@
-import { eq, desc, and, gte, lte } from "drizzle-orm";
+import { eq, desc, and, gte, lte, or, isNotNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { createConnection } from "mysql2";
-import { InsertUser, users, chatRooms, messages, tasks, chatRoomParticipants, InsertChatRoom, InsertMessage, InsertTask, InsertChatRoomParticipant } from "../drizzle/schema";
+import { createPool, type Pool, type PoolConnection } from "mysql2/promise";
+import {
+  InsertUser,
+  users,
+  chatRooms,
+  messages,
+  tasks,
+  chatRoomParticipants,
+  InsertChatRoom,
+  InsertMessage,
+  InsertTask,
+  InsertChatRoomParticipant,
+  User,
+} from "../drizzle/schema";
 
-import { ENV } from './_core/env';
+import { ENV } from "./_core/env";
+import { ensureProductionSchema } from "./_core/schemaBootstrap";
+import { normalizeName } from "../shared/normalizeNames";
 
-let _db: ReturnType<typeof drizzle> | null = null;
+// Keep DB handle loosely typed: mysql2 callback Pool vs promise Pool type mismatch in drizzle generics.
+let _db: any = null;
+let _pool: Pool | null = null;
+let _schemaReady: Promise<void> | null = null;
+
+function buildPool() {
+  if (_pool) return _pool;
+  if (!process.env.DATABASE_URL) return null;
+
+  _pool = createPool({
+    uri: process.env.DATABASE_URL,
+    ssl: {
+      rejectUnauthorized: true,
+    },
+    connectionLimit: 10,
+    waitForConnections: true,
+    enableKeepAlive: true,
+  });
+  return _pool;
+}
+
+async function ensureSchemaOnce() {
+  if (_schemaReady) return _schemaReady;
+  _schemaReady = (async () => {
+    const pool = buildPool();
+    if (!pool) return;
+    const conn = await pool.getConnection();
+    try {
+      await ensureProductionSchema(conn);
+    } finally {
+      conn.release();
+    }
+  })().catch((error) => {
+    console.warn("[Database] Schema bootstrap failed:", error);
+    _schemaReady = null;
+  });
+  return _schemaReady;
+}
 
 // Lazily create the drizzle instance so local tooling can run without a DB.
 // TiDB Cloud requires SSL connection.
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      const connection = createConnection({
-        uri: process.env.DATABASE_URL,
-        ssl: {
-          rejectUnauthorized: true,
-        },
-      });
-      _db = drizzle(connection);
+      const pool = buildPool();
+      if (!pool) return null;
+      await ensureSchemaOnce();
+      // drizzle's Pool typing expects mysql2 callback pool; promise pool works at runtime.
+      _db = drizzle(pool as any);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
@@ -96,6 +145,120 @@ export async function getUserByOpenId(openId: string) {
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
 
   return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getUserById(userId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  return result[0];
+}
+
+function userLabel(user: User): string {
+  return (user.displayName || user.name || `User ${user.id}`).trim();
+}
+
+/**
+ * Existing team members only — never fabricates new users.
+ * Prefers chat participants so the same responsible people keep their IDs.
+ */
+export async function listSelectableUsers() {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const participantRows = await db
+    .select({
+      id: users.id,
+      openId: users.openId,
+      name: users.name,
+      displayName: users.displayName,
+      email: users.email,
+      role: users.role,
+    })
+    .from(chatRoomParticipants)
+    .innerJoin(users, eq(chatRoomParticipants.userId, users.id));
+
+  // Deduplicate client-side (MySQL/TiDB GROUP BY quirks)
+  const byId = new Map<number, (typeof participantRows)[number]>();
+  for (const row of participantRows) byId.set(row.id, row);
+
+  let source = Array.from(byId.values());
+  if (source.length === 0) {
+    source = await db
+      .select({
+        id: users.id,
+        openId: users.openId,
+        name: users.name,
+        displayName: users.displayName,
+        email: users.email,
+        role: users.role,
+      })
+      .from(users)
+      .where(or(isNotNull(users.displayName), isNotNull(users.name)));
+  }
+
+  const filtered = source.filter((u: any) => {
+    const openId = u.openId || "";
+    if (openId.startsWith("test-user-") && source.length > 2) return false;
+    const label = (u.displayName || u.name || "").trim();
+    return Boolean(label);
+  });
+
+  filtered.sort((a: any, b: any) =>
+    (a.displayName || a.name || "").localeCompare(b.displayName || b.name || "", "pt-BR")
+  );
+
+  return filtered.map((u: any) => ({
+    id: u.id,
+    openId: u.openId,
+    name: u.name,
+    displayName: u.displayName || u.name || `User ${u.id}`,
+    email: u.email,
+    role: u.role,
+    label: (u.displayName || u.name || `User ${u.id}`).trim(),
+  }));
+}
+
+export async function findUserByIdentityName(identityName: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const needle = normalizeName(identityName);
+  if (!needle) return undefined;
+
+  const all = await db.select().from(users);
+  const ranked = all
+    .map((u: any) => ({ user: u, label: userLabel(u), norm: normalizeName(userLabel(u)) }))
+    .filter((x: any) => x.norm);
+
+  const exact =
+    ranked.find((x: any) => x.norm === needle && !(x.user.openId || "").startsWith("test-user-")) ||
+    ranked.find((x: any) => x.norm === needle);
+  if (exact) return exact.user;
+
+  const first = needle.split(/[\s._-]+/).filter(Boolean)[0];
+  if (first && first.length >= 2) {
+    const partial = ranked.find((x: any) => {
+      if ((x.user.openId || "").startsWith("test-user-")) return false;
+      const words = x.norm.split(/[\s._-]+/).filter(Boolean);
+      return words.some((w: any) => w === first || w.startsWith(first));
+    });
+    if (partial) return partial.user;
+  }
+  return undefined;
+}
+
+export async function touchUserLastSignedIn(userId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(users)
+    .set({ lastSignedIn: new Date(), updatedAt: new Date() })
+    .where(eq(users.id, userId));
+}
+
+export function resolveUserDisplayName(user: User | null | undefined): string {
+  if (!user) return "Usuário";
+  return userLabel(user);
 }
 
 // Chat Room queries
@@ -355,8 +518,11 @@ export async function getParticipants(chatRoomId: number) {
     .innerJoin(users, eq(chatRoomParticipants.userId, users.id))
     .where(eq(chatRoomParticipants.chatRoomId, chatRoomId))
     .orderBy(chatRoomParticipants.joinedAt);
-  
-  return participants;
+
+  return participants.map((p: any) => ({
+    ...p,
+    displayName: p.displayName || p.userName || `User ${p.userId}`,
+  }));
 }
 
 export async function removeParticipant(chatRoomId: number, userId: number) {
@@ -415,10 +581,16 @@ export async function deleteTask(taskId: number) {
 export async function updateTaskAssignee(taskId: number, assignedToName: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  
+
+  // Keep historical assignedToName text and try to bind existing user id without renaming people.
+  const matched = await findUserByIdentityName(assignedToName);
   await db
     .update(tasks)
-    .set({ assignedToName })
+    .set({
+      assignedToName,
+      assignedToId: matched?.id,
+      updatedAt: new Date(),
+    })
     .where(eq(tasks.id, taskId));
   
   return { success: true };

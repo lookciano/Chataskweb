@@ -39,6 +39,7 @@ describe("Chat Router", () => {
     const result = await caller.chat.createRoom({
       name: "Test Room",
       description: "A test chat room",
+      password: "12345",
     });
 
     expect(result).toBeDefined();
@@ -63,6 +64,7 @@ describe("Messages Router", () => {
     const room = await caller.chat.createRoom({
       name: "Test Room",
       description: "",
+      password: "12345",
     });
 
     // Then send a message

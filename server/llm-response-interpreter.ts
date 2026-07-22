@@ -83,7 +83,7 @@ Analyze if this response indicates a status change for the task.`,
     if (typeof content === 'string') {
       jsonContent = content;
     } else if (Array.isArray(content)) {
-      const textItem = content.find((c: any) => c.type === 'text') as any;
+      const textItem = (content as any[]).find((c: any) => c.type === 'text') as any;
       if (!textItem || !textItem.text) return null;
       jsonContent = textItem.text;
     } else {
