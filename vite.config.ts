@@ -5,8 +5,9 @@ import { defineConfig } from "vite";
 
 const PROJECT_ROOT = import.meta.dirname;
 
-// Intentionally no Manus runtime/debug plugins in any mode:
-// they injected ~300KB into index.html and broke first-load on Safari.
+// No Manus runtime/debug plugins — they bloated index.html and broke Safari first-load.
+// Avoid forced recharts/manual vendor splits: they caused
+// "ReferenceError: Cannot access 'A' before initialization" in production.
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
@@ -25,31 +26,9 @@ export default defineConfig({
     assetsInlineLimit: 4096,
     cssCodeSplit: true,
     sourcemap: false,
-    chunkSizeWarningLimit: 900,
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          if (!id.includes("node_modules")) return;
-          if (id.includes("recharts") || id.includes("d3-")) return "charts";
-          if (id.includes("@tanstack") || id.includes("@trpc") || id.includes("superjson")) {
-            return "trpc";
-          }
-          if (id.includes("framer-motion")) return "motion";
-          if (id.includes("lucide-react")) return "icons";
-          if (
-            id.includes("streamdown") ||
-            id.includes("mermaid") ||
-            id.includes("katex") ||
-            id.includes("highlight.js") ||
-            id.includes("refractor") ||
-            id.includes("lowlight")
-          ) {
-            return "markdown";
-          }
-          if (id.includes("react-dom") || id.includes("/react/")) return "react-vendor";
-        },
-      },
-    },
+    chunkSizeWarningLimit: 1200,
+    // Let Vite/Rollup split naturally from lazy routes.
+    // Route-level code splitting in App.tsx is enough for fast first paint.
   },
   server: {
     host: true,
