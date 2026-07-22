@@ -47,6 +47,8 @@ interface Task {
   status: "pending" | "completed";
   dueDate?: Date;
   createdAt: Date;
+  /** Used as completion time when status becomes completed (backend updates this on status change). */
+  updatedAt?: Date;
   assignedToId?: number;
   assignedToName?: string | null;
   creatorId: number;
@@ -293,6 +295,7 @@ export default function ChatApp() {
         tasksQuery.data.map((task: any) => ({
           ...task,
           createdAt: new Date(task.createdAt),
+          updatedAt: task.updatedAt ? new Date(task.updatedAt) : undefined,
           dueDate: task.dueDate ? new Date(task.dueDate) : undefined,
         }))
       );
@@ -521,6 +524,17 @@ export default function ChatApp() {
 
   // Tarefas filtradas
   const filteredTasks = getFilteredTasks(tasks);
+
+  /** Completed list only: most recently completed/updated first. Pending order unchanged. */
+  const getCompletedTasksNewestFirst = (taskList: Task[]) =>
+    [...taskList]
+      .filter((t) => t.status === "completed")
+      .sort((a, b) => {
+        const aTime = (a.updatedAt ?? a.createdAt).getTime();
+        const bTime = (b.updatedAt ?? b.createdAt).getTime();
+        if (bTime !== aTime) return bTime - aTime;
+        return b.id - a.id;
+      });
 
   // Função para obter usuário por ID
   const getUserById = (userId: number) => {
@@ -1143,11 +1157,10 @@ export default function ChatApp() {
                       )}
                     </TabsContent>
                     <TabsContent value="completed" className="space-y-3">
-                      {filteredTasks.filter((t) => t.status === "completed").length === 0 ? (
+                      {getCompletedTasksNewestFirst(filteredTasks).length === 0 ? (
                         <p className="text-center text-slate-400 py-8">Nenhuma tarefa concluída</p>
                       ) : (
-                        filteredTasks
-                          .filter((t) => t.status === "completed")
+                        getCompletedTasksNewestFirst(filteredTasks)
                           .map((task) => (
                             <Card key={task.id} className="p-3 opacity-60">
                               <div className="flex items-start justify-between">
@@ -1965,8 +1978,7 @@ export default function ChatApp() {
           <TabsContent value="completed" className="flex-1 overflow-hidden">
             <ScrollArea className="h-full p-4">
               <div className="space-y-3">
-                {filteredTasks
-                  .filter((t) => t.status === "completed")
+                {getCompletedTasksNewestFirst(filteredTasks)
                   .map((task) => (
                     <Card
                       key={task.id}
