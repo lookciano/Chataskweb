@@ -68,9 +68,16 @@ interface Participant {
 
 export default function ChatApp() {
   const { user, loading, identities, needsIdentity, selectIdentity, selecting, logout, isAuthenticated } = useAuth();
-  const { notifyNewMessage, checkForNewMessages, setLastMessageCount } = useMessageNotifications();
+  const { notifyNewMessage, setLastMessageCount } = useMessageNotifications();
   const [selectedRoom, setSelectedRoom] = useState<number | null>(null);
   const [messageInput, setMessageInput] = useState("");
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState("");
+  const [mentionStart, setMentionStart] = useState<number | null>(null);
+  const [mentionHighlight, setMentionHighlight] = useState(0);
+  const messageInputRef = useRef<HTMLInputElement | null>(null);
+  const seenMessageIdsRef = useRef<Set<number>>(new Set());
+  const bootstrappedNotifyRef = useRef(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [hasMoreOlder, setHasMoreOlder] = useState(false);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
@@ -377,17 +384,64 @@ export default function ChatApp() {
     return () => viewport.removeEventListener('scroll', handleScroll);
   }, [messages, hasMoreOlder, selectedRoom]);
 
-  // Detectar novas mensagens e enviar notificações
+  // Reset mention UI when room changes
   useEffect(() => {
-    if (messages.length > 0 && checkForNewMessages(messages.length)) {
-      const lastMessage = messages[messages.length - 1];
-      const senderLabel = lastMessage.senderName || getUserDisplayName(lastMessage.senderId);
-      if (lastMessage.senderId !== user?.id && senderLabel) {
-        const preview = lastMessage.content.substring(0, 50);
+    closeMentionMenu();
+    seenMessageIdsRef.current = new Set();
+    bootstrappedNotifyRef.current = false;
+  }, [selectedRoom]);
+
+  // Signal replies-to-you and @mentions (no schema changes; plain-text @Name)
+  useEffect(() => {
+    if (!user || messages.length === 0) return;
+
+    // First paint after load/history: mark all visible as seen (no toast spam)
+    if (!bootstrappedNotifyRef.current) {
+      for (const m of messages) seenMessageIdsRef.current.add(m.id);
+      bootstrappedNotifyRef.current = true;
+      setLastMessageCount(messages.length);
+      return;
+    }
+
+    const fresh = messages.filter((m) => !seenMessageIdsRef.current.has(m.id));
+    if (!fresh.length) {
+      setLastMessageCount(messages.length);
+      return;
+    }
+    for (const m of fresh) seenMessageIdsRef.current.add(m.id);
+    setLastMessageCount(messages.length);
+
+    for (const msg of fresh) {
+      if (msg.senderId === user.id) continue;
+      const senderLabel = msg.senderName || getUserDisplayName(msg.senderId);
+      const preview = msg.content.substring(0, 80);
+      const mentioned = messageMentionsMe(msg.content);
+      const replied = isReplyToMe(msg);
+
+      if (mentioned && replied) {
+        toast.message(`${senderLabel} respondeu e mencionou você`, {
+          description: preview,
+          duration: 5000,
+        });
+        notifyNewMessage(senderLabel, preview);
+      } else if (mentioned) {
+        toast.message(`${senderLabel} mencionou você`, {
+          description: preview,
+          duration: 5000,
+        });
+        notifyNewMessage(senderLabel, `mencionou você: ${preview}`);
+      } else if (replied) {
+        toast.message(`${senderLabel} respondeu sua mensagem`, {
+          description: preview,
+          duration: 5000,
+        });
+        notifyNewMessage(senderLabel, `respondeu você: ${preview}`);
+      } else {
+        // keep soft general notify for other chat traffic
         notifyNewMessage(senderLabel, preview);
       }
     }
-  }, [messages.length, user?.displayName, notifyNewMessage, checkForNewMessages]);  
+  }, [messages, user?.id, user?.displayName, displayName, notifyNewMessage, setLastMessageCount]);
   // Reset chat state when switching rooms
   useEffect(() => {
     setMessages([]);
@@ -498,6 +552,233 @@ export default function ChatApp() {
   const getRepliedMessage = (replyToId: number): Message | undefined => {
     return messages.find(m => m.id === replyToId);
   };
+
+  type MentionCandidate = { id: number; name: string };
+
+  const getMentionCandidates = (): MentionCandidate[] => {
+    const map = new Map<number, MentionCandidate>();
+    for (const p of participants) {
+      const name = (p.displayName || p.userName || "").trim();
+      if (!p.userId || !name) continue;
+      // Allow mentioning yourself rarely? Skip for noise.
+      if (user?.id && p.userId === user.id) continue;
+      map.set(p.userId, { id: p.userId, name });
+    }
+    // Fallback: people seen as message senders if participants incomplete
+    for (const m of messages) {
+      if (user?.id && m.senderId === user.id) continue;
+      if (map.has(m.senderId)) continue;
+      const name = (m.senderName || "").trim();
+      if (!name) continue;
+      map.set(m.senderId, { id: m.senderId, name });
+    }
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  };
+
+  const filteredMentionCandidates = (() => {
+    const all = getMentionCandidates();
+    const q = mentionQuery.trim().toLowerCase();
+    if (!q) return all.slice(0, 8);
+    return all
+      .filter((c) => c.name.toLowerCase().includes(q) || normalizeName(c.name).includes(normalizeName(q)))
+      .slice(0, 8);
+  })();
+
+  const myMentionTokens = (() => {
+    const labels = new Set<string>();
+    const add = (v?: string | null) => {
+      const s = (v || "").trim();
+      if (!s) return;
+      labels.add(s.toLowerCase());
+      labels.add(normalizeName(s));
+      // first name helpers
+      const first = s.split(/\s+/)[0];
+      if (first) {
+        labels.add(first.toLowerCase());
+        labels.add(normalizeName(first));
+      }
+    };
+    add(user?.displayName);
+    add(user?.name);
+    add(displayName);
+    return Array.from(labels).filter(Boolean);
+  })();
+
+  const messageMentionsMe = (content: string) => {
+    if (!content || myMentionTokens.length === 0) return false;
+    // Match @Name with letters/accents/spaces until punctuation
+    const re = /@([A-Za-zÀ-ÿ0-9._-][A-Za-zÀ-ÿ0-9._\-\s]{0,60})/g;
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(content)) !== null) {
+      const raw = match[1].trim().replace(/[.,!?;:]+$/g, "");
+      const low = raw.toLowerCase();
+      const norm = normalizeName(raw);
+      for (const token of myMentionTokens) {
+        if (!token) continue;
+        if (low === token || norm === token) return true;
+        if (low.startsWith(token + " ") || norm.startsWith(token + " ")) return true;
+        // "@Larissa" matches display "Larissa Cortez"
+        if (token.startsWith(low) || token.startsWith(norm)) return true;
+      }
+    }
+    return false;
+  };
+
+  const closeMentionMenu = () => {
+    setMentionOpen(false);
+    setMentionQuery("");
+    setMentionStart(null);
+    setMentionHighlight(0);
+  };
+
+  const updateMentionFromInput = (value: string, caret: number) => {
+    // Find active @ token just before caret
+    const left = value.slice(0, caret);
+    const at = left.lastIndexOf("@");
+    if (at < 0) {
+      closeMentionMenu();
+      return;
+    }
+    // '@' must start token (start or whitespace before)
+    if (at > 0 && !/\s/.test(left[at - 1])) {
+      closeMentionMenu();
+      return;
+    }
+    const fragment = left.slice(at + 1);
+    // stop if space-only finished mention or newline
+    if (/[\n]/.test(fragment)) {
+      closeMentionMenu();
+      return;
+    }
+    // If fragment has ending punctuation only, still allow typing query without trailing space end
+    if (/\s{2,}/.test(fragment)) {
+      closeMentionMenu();
+      return;
+    }
+    // Close when user typed a completed mention (space after a chosen longer name) — keep open while query short
+    setMentionOpen(true);
+    setMentionStart(at);
+    setMentionQuery(fragment);
+    setMentionHighlight(0);
+  };
+
+  const applyMention = (candidate: MentionCandidate) => {
+    if (mentionStart == null) return;
+    const input = messageInputRef.current;
+    const caret = input?.selectionStart ?? messageInput.length;
+    const before = messageInput.slice(0, mentionStart);
+    const after = messageInput.slice(caret);
+    // Store as @First Last with trailing space for continuous typing
+    const insertion = `@${candidate.name} `;
+    const next = `${before}${insertion}${after}`;
+    setMessageInput(next);
+    closeMentionMenu();
+    requestAnimationFrame(() => {
+      const el = messageInputRef.current;
+      if (!el) return;
+      const pos = before.length + insertion.length;
+      el.focus();
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
+  const handleComposerChange = (value: string, caret: number) => {
+    setMessageInput(value);
+    updateMentionFromInput(value, caret);
+  };
+
+  const handleComposerKeyDown = (e: import("react").KeyboardEvent<HTMLInputElement>) => {
+    if (mentionOpen && filteredMentionCandidates.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setMentionHighlight((i) => (i + 1) % filteredMentionCandidates.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setMentionHighlight((i) => (i - 1 + filteredMentionCandidates.length) % filteredMentionCandidates.length);
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        applyMention(filteredMentionCandidates[mentionHighlight] || filteredMentionCandidates[0]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeMentionMenu();
+        return;
+      }
+    }
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      void handleSendMessage();
+    }
+  };
+
+  const renderMessageContent = (content: string) => {
+    // Highlight @mentions visually (text remains plain in DB)
+    const nodes: import("react").ReactNode[] = [];
+    const re = /@([A-Za-zÀ-ÿ0-9._-][A-Za-zÀ-ÿ0-9._\-\s]{0,60})/g;
+    let last = 0;
+    let match: RegExpExecArray | null;
+    let key = 0;
+    while ((match = re.exec(content)) !== null) {
+      const start = match.index;
+      if (start > last) nodes.push(content.slice(last, start));
+      const full = match[0];
+      // trim trailing punctuation from highlight width but keep in text
+      const cleaned = full.replace(/[.,!?;:]+$/g, "");
+      const trailing = full.slice(cleaned.length);
+      nodes.push(
+        <span
+          key={`m-${key++}`}
+          className="rounded px-0.5 font-medium text-teal-800 bg-teal-50/90"
+        >
+          {cleaned}
+        </span>
+      );
+      if (trailing) nodes.push(trailing);
+      last = start + full.length;
+    }
+    if (last < content.length) nodes.push(content.slice(last));
+    return nodes.length ? nodes : content;
+  };
+
+  const isReplyToMe = (msg: Message) => {
+    if (!user || !msg.replyToId) return false;
+    const parent = getRepliedMessage(msg.replyToId);
+    return Boolean(parent && parent.senderId === user.id);
+  };
+
+  const mentionDropdown = mentionOpen && filteredMentionCandidates.length > 0 ? (
+    <div className="absolute bottom-full left-0 right-12 mb-1 z-30 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-md">
+      <div className="px-2.5 py-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-400 border-b border-slate-100">
+        Mencionar
+      </div>
+      <ul className="max-h-48 overflow-y-auto py-1">
+        {filteredMentionCandidates.map((c, idx) => (
+          <li key={c.id}>
+            <button
+              type="button"
+              className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm ${
+                idx === mentionHighlight ? "bg-teal-50 text-teal-900" : "text-slate-700 hover:bg-slate-50"
+              }`}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                applyMention(c);
+              }}
+            >
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white">
+                {c.name.slice(0, 1).toUpperCase()}
+              </span>
+              <span className="truncate font-medium">{c.name}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  ) : null;
 
   // Função para filtrar tarefas
   const getFilteredTasks = (taskList: Task[]) => {
@@ -768,6 +1049,7 @@ export default function ChatApp() {
 
       // Limpar input imediatamente
       setMessageInput("");
+      closeMentionMenu();
       setReplyingToId(null);
       setReplyingToContent("");
 
@@ -1358,7 +1640,9 @@ export default function ChatApp() {
                             className={`group max-w-[85%] sm:max-w-xs px-3.5 py-2.5 rounded-2xl shadow-none ${
                               msg.senderId === user?.id
                                 ? "bg-teal-600 text-white rounded-br-md"
-                                : "bg-white text-slate-900 border border-slate-200 rounded-bl-md"
+                                : messageMentionsMe(msg.content) || isReplyToMe(msg)
+                                  ? "bg-white text-slate-900 border border-teal-300 ring-1 ring-teal-100 rounded-bl-md"
+                                  : "bg-white text-slate-900 border border-slate-200 rounded-bl-md"
                             }`}
                           >
                             <p className="text-sm font-medium mb-0.5 tracking-tight">
@@ -1370,7 +1654,21 @@ export default function ChatApp() {
                                 <p className="text-slate-700 break-words">{getRepliedMessage(msg.replyToId)?.content}</p>
                               </div>
                             )}
-                            <p className="text-sm leading-relaxed break-words">{msg.content}</p>
+                            <p className="text-sm leading-relaxed break-words">{renderMessageContent(msg.content)}</p>
+                            {(messageMentionsMe(msg.content) || isReplyToMe(msg)) && msg.senderId !== user?.id && (
+                              <div className="mt-1.5 flex flex-wrap gap-1">
+                                {messageMentionsMe(msg.content) && (
+                                  <span className="inline-flex items-center rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 border border-amber-200">
+                                    mencionou você
+                                  </span>
+                                )}
+                                {isReplyToMe(msg) && (
+                                  <span className="inline-flex items-center rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-800 border border-sky-200">
+                                    resposta a você
+                                  </span>
+                                )}
+                              </div>
+                            )}
                             <div className="flex items-center justify-between mt-2">
                               <p
                                 className={`text-xs ${
@@ -1450,17 +1748,16 @@ export default function ChatApp() {
                     </button>
                   </div>
                 )}
-                <div className="flex gap-2 items-center">
+                <div className="relative flex gap-2 items-center">
+                  {mentionDropdown}
                   <Input
+                    ref={messageInputRef}
                     value={messageInput}
-                    onChange={(e) => setMessageInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSendMessage();
-                      }
-                    }}
-                    placeholder="Digite sua mensagem..."
+                    onChange={(e) => handleComposerChange(e.target.value, e.target.selectionStart ?? e.target.value.length)}
+                    onClick={(e) => updateMentionFromInput(e.currentTarget.value, e.currentTarget.selectionStart ?? 0)}
+                    onKeyUp={(e) => updateMentionFromInput(e.currentTarget.value, e.currentTarget.selectionStart ?? 0)}
+                    onKeyDown={handleComposerKeyDown}
+                    placeholder="Mensagem… use @ para mencionar"
                     className="flex-1 min-h-11"
                   />
                   <Button
@@ -1850,7 +2147,9 @@ export default function ChatApp() {
                             className={`group max-w-md px-3.5 py-2.5 rounded-2xl shadow-none ${
                               msg.senderId === user?.id
                                 ? "bg-teal-600 text-white rounded-br-md"
-                                : "bg-white text-slate-900 border border-slate-200 rounded-bl-md"
+                                : messageMentionsMe(msg.content) || isReplyToMe(msg)
+                                  ? "bg-white text-slate-900 border border-teal-300 ring-1 ring-teal-100 rounded-bl-md"
+                                  : "bg-white text-slate-900 border border-slate-200 rounded-bl-md"
                             }`}
                           >
                             <p className="text-sm font-medium mb-0.5 tracking-tight">
@@ -1862,7 +2161,21 @@ export default function ChatApp() {
                                 <p className="text-slate-700 break-words">{getRepliedMessage(msg.replyToId)?.content}</p>
                               </div>
                             )}
-                            <p className="text-sm leading-relaxed break-words">{msg.content}</p>
+                            <p className="text-sm leading-relaxed break-words">{renderMessageContent(msg.content)}</p>
+                            {(messageMentionsMe(msg.content) || isReplyToMe(msg)) && msg.senderId !== user?.id && (
+                              <div className="mt-1.5 flex flex-wrap gap-1">
+                                {messageMentionsMe(msg.content) && (
+                                  <span className="inline-flex items-center rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 border border-amber-200">
+                                    mencionou você
+                                  </span>
+                                )}
+                                {isReplyToMe(msg) && (
+                                  <span className="inline-flex items-center rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-800 border border-sky-200">
+                                    resposta a você
+                                  </span>
+                                )}
+                              </div>
+                            )}
                             <div className="flex items-center justify-between mt-2">
                               <p
                                 className={`text-xs ${
@@ -1942,17 +2255,16 @@ export default function ChatApp() {
                     </button>
                   </div>
                 )}
-                <div className="flex gap-2">
+                <div className="relative flex gap-2">
+                  {mentionDropdown}
                   <Input
+                    ref={messageInputRef}
                     value={messageInput}
-                    onChange={(e) => setMessageInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSendMessage();
-                      }
-                    }}
-                    placeholder="Digite sua mensagem..."
+                    onChange={(e) => handleComposerChange(e.target.value, e.target.selectionStart ?? e.target.value.length)}
+                    onClick={(e) => updateMentionFromInput(e.currentTarget.value, e.currentTarget.selectionStart ?? 0)}
+                    onKeyUp={(e) => updateMentionFromInput(e.currentTarget.value, e.currentTarget.selectionStart ?? 0)}
+                    onKeyDown={handleComposerKeyDown}
+                    placeholder="Mensagem… use @ para mencionar"
                     className="flex-1"
                   />
                   <Button
