@@ -100,13 +100,16 @@ export default function ProductivityReport() {
       }
       timeline[createdDate].created++;
       
-      // Use updatedAt when status is completed (since completedAt field doesn't exist)
+      // Prefer completedAt (real/approx completion day). Fall back to updatedAt only if missing.
       if (task.status === "completed") {
-        const completedDate = new Date(task.updatedAt).toISOString().split('T')[0];
-        if (!timeline[completedDate]) {
-          timeline[completedDate] = { date: completedDate, created: 0, completed: 0 };
+        const completionSource = task.completedAt ?? task.updatedAt;
+        if (completionSource) {
+          const completedDate = new Date(completionSource).toISOString().split("T")[0];
+          if (!timeline[completedDate]) {
+            timeline[completedDate] = { date: completedDate, created: 0, completed: 0 };
+          }
+          timeline[completedDate].completed++;
         }
-        timeline[completedDate].completed++;
       }
     });
     
