@@ -2080,31 +2080,171 @@ export default function ChatApp() {
           </div>
         )}
 
-        {/* Participants Modal */}
+        {/* Participants Modal — mobile (same manage/invite actions as desktop) */}
         {showParticipantsModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end z-50">
-            <Card className="w-full rounded-t-2xl p-6 max-h-96 overflow-y-auto">
+            <Card className="w-full rounded-t-2xl p-6 max-h-[85vh] overflow-y-auto pb-[max(1.5rem,env(safe-area-inset-bottom))]">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-base font-semibold text-slate-900">Participantes ({participants.length})</h3>
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900">Participantes ({participants.length})</h3>
+                  <p className="text-[11px] text-slate-500 mt-0.5">Acesso só de quem está nesta lista</p>
+                </div>
                 <button
                   onClick={() => setShowParticipantsModal(false)}
-                  className="text-slate-400 hover:text-slate-600"
+                  className="text-slate-400 hover:text-slate-600 p-1"
+                  aria-label="Fechar"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
+
+              {canManageRoom && (
+                <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+                  <p className="text-xs font-medium text-slate-700">Adicionar membro já cadastrado</p>
+                  <div className="flex gap-2">
+                    <select
+                      className="flex-1 h-10 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-800"
+                      value={memberToAddId}
+                      onChange={(e) => setMemberToAddId(e.target.value)}
+                    >
+                      <option value="">Selecione…</option>
+                      {(candidateMembersQuery.data || []).map((u: any) => (
+                        <option key={u.id} value={String(u.id)}>
+                          {u.displayName || u.name || `User ${u.id}`}
+                        </option>
+                      ))}
+                    </select>
+                    <Button
+                      type="button"
+                      className="bg-teal-600 hover:bg-teal-700 text-white shadow-none shrink-0 h-10"
+                      disabled={!memberToAddId || addParticipantMutation.isPending}
+                      onClick={() => {
+                        if (!selectedRoom || !memberToAddId) return;
+                        addParticipantMutation.mutate({
+                          chatRoomId: selectedRoom,
+                          userId: Number(memberToAddId),
+                        });
+                      }}
+                    >
+                      Add
+                    </Button>
+                  </div>
+                  {(candidateMembersQuery.data || []).length === 0 && !candidateMembersQuery.isLoading && (
+                    <p className="text-[11px] text-slate-500">Nenhum usuário disponível fora da sala.</p>
+                  )}
+
+                  <div className="pt-2 border-t border-slate-200 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-medium text-slate-700">Convidar pessoa nova (link)</p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-9 border-slate-200 text-slate-700"
+                        disabled={!selectedRoom || createInviteMutation.isPending}
+                        onClick={() => {
+                          if (!selectedRoom) return;
+                          createInviteMutation.mutate({
+                            chatRoomId: selectedRoom,
+                            expiresInDays: 14,
+                          });
+                        }}
+                      >
+                        Gerar link
+                      </Button>
+                    </div>
+                    <p className="text-[11px] text-slate-500 leading-snug">
+                      Quem abrir o link entra só nesta sala. Expira em 14 dias. Pode revogar a qualquer momento.
+                    </p>
+                    <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                      {(invitesQuery.data || []).map((inv: any) => (
+                        <div
+                          key={inv.id}
+                          className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2 py-2"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[11px] text-slate-700 truncate font-mono">{inv.url || inv.path}</p>
+                            <p className="text-[10px] text-slate-400">
+                              {inv.expired ? "Expirado" : "Ativo"}
+                              {inv.expiresAt
+                                ? ` · até ${new Date(inv.expiresAt).toLocaleDateString("pt-BR")}`
+                                : ""}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            className="text-[11px] text-teal-700 font-medium shrink-0 px-1 py-1"
+                            onClick={async () => {
+                              const url = inv.url || `${window.location.origin}${inv.path}`;
+                              try {
+                                await navigator.clipboard.writeText(url);
+                                toast.success("Link copiado");
+                              } catch {
+                                toast.message(url);
+                              }
+                            }}
+                          >
+                            Copiar
+                          </button>
+                          {!inv.expired && (
+                            <button
+                              type="button"
+                              className="text-[11px] text-slate-500 hover:text-red-600 shrink-0 px-1 py-1"
+                              disabled={revokeInviteMutation.isPending}
+                              onClick={() => {
+                                if (!selectedRoom) return;
+                                revokeInviteMutation.mutate({
+                                  chatRoomId: selectedRoom,
+                                  inviteId: inv.id,
+                                });
+                              }}
+                            >
+                              Revogar
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      {(invitesQuery.data || []).length === 0 && !invitesQuery.isLoading && (
+                        <p className="text-[11px] text-slate-400">Nenhum convite gerado ainda.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-2">
                 {participants.map((p) => (
                   <div key={p.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
                     <div className="w-10 h-10 rounded-full bg-teal-100 flex items-center justify-center text-sm font-bold text-teal-900">
                       {(p.displayName || p.userName || "U")[0].toUpperCase()}
                     </div>
-                    <div className="flex-1">
-                      <p className="font-medium text-slate-900">{p.displayName || p.userName}</p>
-                      <p className="text-xs text-slate-500">{p.email}</p>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-slate-900 truncate">{p.displayName || p.userName}</p>
+                      <p className="text-xs text-slate-500 truncate">{p.email}</p>
                     </div>
+                    {canManageRoom && p.userId !== user?.id && (
+                      <button
+                        type="button"
+                        title="Remover da sala (não apaga o usuário)"
+                        className="text-xs text-slate-500 hover:text-red-600 px-2 py-1 rounded hover:bg-red-50 shrink-0"
+                        disabled={removeParticipantMutation.isPending}
+                        onClick={() => {
+                          if (!selectedRoom) return;
+                          if (!confirm(`Remover ${p.displayName || p.userName} desta sala? A conta e o histórico permanecem.`)) return;
+                          removeParticipantMutation.mutate({
+                            chatRoomId: selectedRoom,
+                            userId: p.userId,
+                          });
+                        }}
+                      >
+                        Remover
+                      </button>
+                    )}
                   </div>
                 ))}
+                {participants.length === 0 && (
+                  <p className="text-sm text-slate-500 text-center py-4">Nenhum participante nesta sala.</p>
+                )}
               </div>
             </Card>
           </div>
