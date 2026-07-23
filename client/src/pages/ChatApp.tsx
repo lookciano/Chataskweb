@@ -117,9 +117,20 @@ export default function ChatApp() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const ROOM_PASSWORD = "12345";
   const { widths, isResizing, handleMouseDown } = useResizableColumns();
+  const utils = trpc.useUtils();
 
   // Queries
-  const roomsQuery = trpc.chat.rooms.useQuery(undefined, { enabled: !!user });
+  const roomsQuery = trpc.chat.rooms.useQuery(undefined, {
+    enabled: !!user,
+    // Keep unread badges fresh while browsing the room list
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
+  });
+  const markRoomReadMutation = trpc.chat.markRoomRead.useMutation({
+    onSuccess: async () => {
+      await utils.chat.rooms.invalidate();
+    },
+  });
   const messagesQuery = trpc.messages.list.useQuery(
     { chatRoomId: selectedRoom || 0, limit: 50 },
     {
@@ -162,8 +173,6 @@ export default function ChatApp() {
     }
   );
 
-  // Utils
-  const utils = trpc.useUtils();
   const toggleThumbsUpMutation = trpc.messages.toggleThumbsUp.useMutation({
     onSuccess: async () => {
       await utils.messages.reactions.invalidate();
@@ -333,6 +342,27 @@ export default function ChatApp() {
       }
     }
   }, [roomsQuery.data, selectedRoom, isMobile]);
+
+  // WhatsApp-style: opening a room clears unread for current user
+  useEffect(() => {
+    if (!user?.id || !selectedRoom) return;
+    if (!messages.length) return;
+    // On mobile list view, don't auto-clear until user opens chat of that room
+    if (isMobile && mobileView !== "chat") return;
+
+    const maxId = messages.reduce((m, msg) => Math.max(m, Number(msg.id) || 0), 0);
+    if (!maxId) return;
+
+    const tmr = window.setTimeout(() => {
+      markRoomReadMutation.mutate({
+        chatRoomId: selectedRoom,
+        lastReadMessageId: maxId,
+      });
+    }, 400);
+    return () => window.clearTimeout(tmr);
+    // intentionally not depending on mutation object identity
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, selectedRoom, messages, isMobile, mobileView]);
 
   // Keep ref aligned for polling matching without stale closures
   useEffect(() => {
@@ -1580,7 +1610,15 @@ export default function ChatApp() {
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <MessageCircle className="w-4 h-4 text-teal-600 shrink-0" />
-                    <span className="font-medium text-sm text-slate-900 truncate">{room.name}</span>
+                    <span className="font-medium text-sm text-slate-900 truncate flex-1">{room.name}</span>
+                    {Number(room.unreadCount || 0) > 0 && (
+                      <span
+                        className="ml-auto shrink-0 min-w-[1.25rem] h-5 px-1.5 rounded-full bg-teal-600 text-white text-[11px] font-semibold flex items-center justify-center"
+                        title={`${room.unreadCount} mensagem(ns) não lida(s)`}
+                      >
+                        {Number(room.unreadCount) > 99 ? "99+" : room.unreadCount}
+                      </span>
+                    )}
                   </div>
                 </button>
                 {roomMenu(room.id)}
@@ -2403,7 +2441,17 @@ export default function ChatApp() {
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <MessageCircle className="w-4 h-4 shrink-0" />
-                    <span className="truncate text-sm">{room.name}</span>
+                    <span className={`truncate text-sm flex-1 ${Number(room.unreadCount || 0) > 0 && selectedRoom !== room.id ? "font-semibold" : ""}`}>
+                      {room.name}
+                    </span>
+                    {Number(room.unreadCount || 0) > 0 && selectedRoom !== room.id && (
+                      <span
+                        className="ml-auto shrink-0 min-w-[1.25rem] h-5 px-1.5 rounded-full bg-teal-600 text-white text-[11px] font-semibold flex items-center justify-center"
+                        title={`${room.unreadCount} mensagem(ns) não lida(s)`}
+                      >
+                        {Number(room.unreadCount) > 99 ? "99+" : room.unreadCount}
+                      </span>
+                    )}
                   </div>
                 </button>
                 <div className="opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">

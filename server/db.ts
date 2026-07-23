@@ -11,6 +11,7 @@ import {
   messageReactions,
   roomMembers,
   roomInvites,
+  roomReadState,
   InsertChatRoom,
   InsertMessage,
   InsertTask,
@@ -335,36 +336,161 @@ export async function createChatRoom(input: InsertChatRoom) {
  * Return rooms a user may open.
  * - Global admin: all rooms
  * - Others: rooms where they are in chatRoomParticipants OR roomMembers(approved)
+ * Includes WhatsApp-style unreadCount (messages after lastRead, not from self).
  */
 export async function getChatRoomsForUser(userId: number, isGlobalAdmin = false) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
+  let rooms: any[];
   if (isGlobalAdmin) {
-    return await db.select().from(chatRooms).orderBy(desc(chatRooms.updatedAt));
+    rooms = await db.select().from(chatRooms).orderBy(desc(chatRooms.updatedAt));
+  } else {
+    const participantRooms = await db
+      .select({ chatRoomId: chatRoomParticipants.chatRoomId })
+      .from(chatRoomParticipants)
+      .where(eq(chatRoomParticipants.userId, userId));
+
+    const memberRooms = await db
+      .select({ chatRoomId: roomMembers.chatRoomId })
+      .from(roomMembers)
+      .where(and(eq(roomMembers.userId, userId), eq(roomMembers.status, "approved")));
+
+    const ids = Array.from(
+      new Set([
+        ...participantRooms.map((r: { chatRoomId: number }) => r.chatRoomId),
+        ...memberRooms.map((r: { chatRoomId: number }) => r.chatRoomId),
+      ])
+    );
+
+    if (!ids.length) return [];
+    const all = await db.select().from(chatRooms).orderBy(desc(chatRooms.updatedAt));
+    rooms = all.filter((r: { id: number }) => ids.includes(r.id));
   }
 
-  const participantRooms = await db
-    .select({ chatRoomId: chatRoomParticipants.chatRoomId })
-    .from(chatRoomParticipants)
-    .where(eq(chatRoomParticipants.userId, userId));
+  if (!rooms.length) return [];
 
-  const memberRooms = await db
-    .select({ chatRoomId: roomMembers.chatRoomId })
-    .from(roomMembers)
-    .where(and(eq(roomMembers.userId, userId), eq(roomMembers.status, "approved")));
-
-  const ids = Array.from(
-    new Set([
-      ...participantRooms.map((r: { chatRoomId: number }) => r.chatRoomId),
-      ...memberRooms.map((r: { chatRoomId: number }) => r.chatRoomId),
-    ])
+  // Seed last-read to current max so old history does not explode badges on first deploy
+  await ensureRoomReadStatesForUser(
+    userId,
+    rooms.map((r: { id: number }) => r.id)
   );
 
-  if (!ids.length) return [];
+  const withUnread = await Promise.all(
+    rooms.map(async (room: any) => {
+      const unreadCount = await countUnreadInRoom(room.id, userId);
+      return { ...room, unreadCount };
+    })
+  );
+  return withUnread;
+}
 
-  const rooms = await db.select().from(chatRooms).orderBy(desc(chatRooms.updatedAt));
-  return rooms.filter((r: { id: number }) => ids.includes(r.id));
+async function getLatestMessageId(chatRoomId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const rows = await db
+    .select({ id: messages.id })
+    .from(messages)
+    .where(eq(messages.chatRoomId, chatRoomId))
+    .orderBy(desc(messages.id))
+    .limit(1);
+  return Number(rows[0]?.id || 0);
+}
+
+/** Create missing cursors at "caught up" so existing history is not unread. */
+export async function ensureRoomReadStatesForUser(userId: number, chatRoomIds: number[]) {
+  const db = await getDb();
+  if (!db || !chatRoomIds.length) return;
+
+  for (const chatRoomId of chatRoomIds) {
+    try {
+      const existing = await db
+        .select({ id: roomReadState.id })
+        .from(roomReadState)
+        .where(
+          and(eq(roomReadState.chatRoomId, chatRoomId), eq(roomReadState.userId, userId))
+        )
+        .limit(1);
+      if (existing.length) continue;
+      const latest = await getLatestMessageId(chatRoomId);
+      await db.insert(roomReadState).values({
+        chatRoomId,
+        userId,
+        lastReadMessageId: latest,
+        lastReadAt: new Date(),
+      });
+    } catch {
+      // table may not exist yet in some envs until bootstrap
+    }
+  }
+}
+
+export async function countUnreadInRoom(chatRoomId: number, userId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  try {
+    const state = await db
+      .select({ lastReadMessageId: roomReadState.lastReadMessageId })
+      .from(roomReadState)
+      .where(
+        and(eq(roomReadState.chatRoomId, chatRoomId), eq(roomReadState.userId, userId))
+      )
+      .limit(1);
+    const lastRead = Number(state[0]?.lastReadMessageId || 0);
+    const full = await db
+      .select({ id: messages.id, senderId: messages.senderId })
+      .from(messages)
+      .where(and(eq(messages.chatRoomId, chatRoomId), gt(messages.id, lastRead)));
+    return full.filter((m: any) => Number(m.senderId) !== Number(userId)).length;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Mark room as read up to a message id (or latest). Never deletes history.
+ */
+export async function markRoomAsRead(params: {
+  chatRoomId: number;
+  userId: number;
+  lastReadMessageId?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  let lastId = Number(params.lastReadMessageId || 0);
+  if (!lastId) {
+    lastId = await getLatestMessageId(params.chatRoomId);
+  }
+
+  const existing = await db
+    .select()
+    .from(roomReadState)
+    .where(
+      and(
+        eq(roomReadState.chatRoomId, params.chatRoomId),
+        eq(roomReadState.userId, params.userId)
+      )
+    )
+    .limit(1);
+
+  if (existing.length) {
+    const prev = Number(existing[0].lastReadMessageId || 0);
+    const next = Math.max(prev, lastId);
+    await db
+      .update(roomReadState)
+      .set({ lastReadMessageId: next, lastReadAt: new Date() })
+      .where(eq(roomReadState.id, existing[0].id));
+    return { chatRoomId: params.chatRoomId, lastReadMessageId: next };
+  }
+
+  await db.insert(roomReadState).values({
+    chatRoomId: params.chatRoomId,
+    userId: params.userId,
+    lastReadMessageId: lastId,
+    lastReadAt: new Date(),
+  });
+  return { chatRoomId: params.chatRoomId, lastReadMessageId: lastId };
 }
 
 export async function getChatRooms() {

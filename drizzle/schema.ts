@@ -127,3 +127,23 @@ export const roomMembers = mysqlTable("roomMembers", {
 
 export type RoomMember = typeof roomMembers.$inferSelect;
 export type InsertRoomMember = typeof roomMembers.$inferInsert;
+
+/**
+ * Per-user last-read cursor for a room (WhatsApp-style unread badges).
+ * Additive only — does not affect messages/tasks.
+ */
+export const roomReadState = mysqlTable(
+  "roomReadState",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    chatRoomId: int("chatRoomId").notNull(),
+    userId: int("userId").notNull(),
+    /** Highest message id the user has seen in this room (0 = nothing marked yet). */
+    lastReadMessageId: int("lastReadMessageId").default(0).notNull(),
+    lastReadAt: timestamp("lastReadAt").defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("uq_roomReadState_room_user").on(table.chatRoomId, table.userId)]
+);
+
+export type RoomReadState = typeof roomReadState.$inferSelect;
+export type InsertRoomReadState = typeof roomReadState.$inferInsert;

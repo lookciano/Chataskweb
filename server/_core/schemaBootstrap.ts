@@ -55,6 +55,16 @@ export async function ensureProductionSchema(connection: Connection): Promise<vo
       KEY idx_roomMembers_userId (userId),
       KEY idx_roomMembers_chatRoomId (chatRoomId)
     )`,
+    // Per-user unread cursor (WhatsApp-style room badges)
+    `CREATE TABLE IF NOT EXISTS roomReadState (
+      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      chatRoomId INT NOT NULL,
+      userId INT NOT NULL,
+      lastReadMessageId INT NOT NULL DEFAULT 0,
+      lastReadAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_roomReadState_room_user (chatRoomId, userId),
+      KEY idx_roomReadState_userId (userId)
+    )`,
   ];
 
   for (const sql of statements) {

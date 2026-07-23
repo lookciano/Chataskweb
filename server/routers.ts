@@ -157,6 +157,20 @@ export const appRouter = router({
     rooms: protectedProcedure.query(async ({ ctx }) => {
       return await db.getChatRoomsForUser(ctx.user.id, ctx.user.role === "admin");
     }),
+    /** Mark room messages as read for the current user (WhatsApp-style badge clear). */
+    markRoomRead: protectedProcedure
+      .input(z.object({
+        chatRoomId: z.number(),
+        lastReadMessageId: z.number().int().positive().optional().nullable(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await assertRoomAccess(ctx, input.chatRoomId);
+        return await db.markRoomAsRead({
+          chatRoomId: input.chatRoomId,
+          userId: ctx.user.id,
+          lastReadMessageId: input.lastReadMessageId ?? null,
+        });
+      }),
     createRoom: protectedProcedure
       .input(z.object({
         name: z.string().min(1),
