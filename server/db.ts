@@ -688,6 +688,49 @@ export async function createMessage(input: InsertMessage) {
   return result;
 }
 
+/**
+ * Hard-delete a single chat message for everyone.
+ * Platform-admin only (enforced at router). Keeps users/tasks/rooms.
+ * - Removes message row
+ * - Clears replyToId pointing at it
+ * - Removes reactions on that message
+ * - Does NOT delete tasks that may reference the message
+ */
+export async function deleteMessageById(messageId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const existing = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
+  const msg = existing[0];
+  if (!msg) {
+    return { success: false as const, reason: "not_found" as const };
+  }
+
+  // Detach replies so threads don't dangle on a missing parent
+  try {
+    await db
+      .update(messages)
+      .set({ replyToId: null } as any)
+      .where(eq(messages.replyToId, messageId));
+  } catch {
+    // ignore if column/update quirks
+  }
+
+  try {
+    await db.delete(messageReactions).where(eq(messageReactions.messageId, messageId));
+  } catch {
+    // table may be empty/missing in some envs
+  }
+
+  await db.delete(messages).where(eq(messages.id, messageId));
+
+  return {
+    success: true as const,
+    messageId,
+    chatRoomId: msg.chatRoomId as number,
+  };
+}
+
 export async function getMessagesByChatRoom(chatRoomId: number, limitValue = 50) {
   const page = await getMessagesPage({ chatRoomId, limit: limitValue });
   // Legacy shape: newest-first (previous behaviour).

@@ -443,6 +443,32 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         return await db.toggleThumbsUp(input.messageId, ctx.user.id);
       }),
+    /**
+     * Delete a single message for everyone.
+     * Only platform admins (Luciano / Teste). Tasks and users are not deleted.
+     */
+    delete: protectedProcedure
+      .input(z.object({
+        messageId: z.number().int().positive(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        if (ctx.user.role !== "admin") {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Apenas administradores podem apagar mensagens",
+          });
+        }
+        const existing = await db.getMessageById(input.messageId);
+        if (!existing) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Mensagem não encontrada" });
+        }
+        await assertRoomAccess(ctx, existing.chatRoomId);
+        const result = await db.deleteMessageById(input.messageId);
+        if (!result.success) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Mensagem não encontrada" });
+        }
+        return result;
+      }),
   }),
 
   tasks: router({

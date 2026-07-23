@@ -181,6 +181,17 @@ export default function ChatApp() {
       toast.error(error.message || "Não foi possível reagir");
     },
   });
+  const deleteMessageMutation = trpc.messages.delete.useMutation({
+    onSuccess: async (_data, vars) => {
+      setMessages((prev) => prev.filter((m) => m.id !== vars.messageId));
+      await utils.messages.reactions.invalidate();
+      await utils.chat.rooms.invalidate();
+      toast.success("Mensagem apagada para todos");
+    },
+    onError: (error) => {
+      toast.error(error.message || "Não foi possível apagar a mensagem");
+    },
+  });
 
   // Mutations
   const sendMessageMutation = trpc.messages.send.useMutation();
@@ -959,6 +970,41 @@ export default function ChatApp() {
       return;
     }
     toggleThumbsUpMutation.mutate({ messageId });
+  };
+
+  const handleDeleteMessage = (msg: Message) => {
+    if (!isPlatformAdmin) return;
+    const preview = (msg.content || "").trim().slice(0, 80);
+    const ok = window.confirm(
+      `Apagar esta mensagem para todos?\n\n"${preview}${msg.content.length > 80 ? "…" : ""}"\n\nEsta ação não pode ser desfeita.`
+    );
+    if (!ok) return;
+    deleteMessageMutation.mutate({ messageId: msg.id });
+  };
+
+  /** Discrete admin-only delete control — visible on hover / long opacity on mobile */
+  const renderDeleteMessageButton = (msg: Message) => {
+    if (!isPlatformAdmin) return null;
+    const isOwn = msg.senderId === user?.id;
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          handleDeleteMessage(msg);
+        }}
+        disabled={deleteMessageMutation.isPending}
+        title="Apagar mensagem (admin)"
+        aria-label="Apagar mensagem"
+        className={`p-1 rounded transition-opacity opacity-50 md:opacity-0 md:group-hover:opacity-70 hover:opacity-100 ${
+          isOwn
+            ? "text-teal-100/70 hover:text-white hover:bg-white/10"
+            : "text-slate-300 hover:text-red-500 hover:bg-red-50"
+        }`}
+      >
+        <Trash2 className="w-3 h-3" />
+      </button>
+    );
   };
 
   const renderThumbsUpControls = (msg: Message) => {
@@ -1925,6 +1971,7 @@ export default function ChatApp() {
                                 >
                                   <Reply className="w-3 h-3" />
                                 </button>
+                                {renderDeleteMessageButton(msg)}
                               </div>
                             </div>
                             {(getThumbsSummary(msg.id).count > 0 || getThumbsSummary(msg.id).reactedByMe) && (
@@ -2625,6 +2672,7 @@ export default function ChatApp() {
                                 >
                                   <Reply className="w-3 h-3" />
                                 </button>
+                                {renderDeleteMessageButton(msg)}
                               </div>
                             </div>
                             {(getThumbsSummary(msg.id).count > 0 || getThumbsSummary(msg.id).reactedByMe) && (
