@@ -9,6 +9,7 @@ const ChatApp = lazy(() => import("./pages/ChatApp"));
 const Home = lazy(() => import("./pages/Home"));
 const ProductivityReport = lazy(() => import("./pages/ProductivityReport"));
 const PerformanceDashboard = lazy(() => import("./pages/PerformanceDashboard"));
+const AcceptInvite = lazy(() => import("./pages/AcceptInvite"));
 const CleanupNames = lazy(() =>
   import("./pages/CleanupNames").then((m) => ({ default: m.CleanupNames }))
 );
@@ -38,6 +39,9 @@ function LazyRoute({
 function Router() {
   return (
     <Switch>
+      <Route path="/convite/:token">
+        <LazyRoute component={AcceptInvite} />
+      </Route>
       <Route path="/dashboard">
         <LazyRoute component={PerformanceDashboard} />
       </Route>

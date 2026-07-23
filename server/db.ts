@@ -10,12 +10,14 @@ import {
   chatRoomParticipants,
   messageReactions,
   roomMembers,
+  roomInvites,
   InsertChatRoom,
   InsertMessage,
   InsertTask,
   InsertChatRoomParticipant,
   User,
 } from "../drizzle/schema";
+import { randomBytes } from "crypto";
 
 import { ENV } from "./_core/env";
 import { ensureProductionSchema } from "./_core/schemaBootstrap";
@@ -162,7 +164,8 @@ function userLabel(user: User): string {
 
 /**
  * Existing team members only — never fabricates new users.
- * Prefers chat participants so the same responsible people keep their IDs.
+ * Prefers chat participants + approved room members so invitees also appear
+ * in the identity picker after accepting a link.
  */
 export async function listSelectableUsers() {
   const db = await getDb();
@@ -180,9 +183,28 @@ export async function listSelectableUsers() {
     .from(chatRoomParticipants)
     .innerJoin(users, eq(chatRoomParticipants.userId, users.id));
 
+  let memberRows: typeof participantRows = [];
+  try {
+    memberRows = await db
+      .select({
+        id: users.id,
+        openId: users.openId,
+        name: users.name,
+        displayName: users.displayName,
+        email: users.email,
+        role: users.role,
+      })
+      .from(roomMembers)
+      .innerJoin(users, eq(roomMembers.userId, users.id))
+      .where(eq(roomMembers.status, "approved"));
+  } catch {
+    memberRows = [];
+  }
+
   // Deduplicate client-side (MySQL/TiDB GROUP BY quirks)
   const byId = new Map<number, (typeof participantRows)[number]>();
   for (const row of participantRows) byId.set(row.id, row);
+  for (const row of memberRows) byId.set(row.id, row);
 
   let source = Array.from(byId.values());
   if (source.length === 0) {
@@ -981,6 +1003,233 @@ export async function removeParticipant(chatRoomId: number, userId: number) {
   return { success: true as const, chatRoomId, userId };
 }
 
+// ——— Phase 2: room invite links ——————————————————————————————
+
+function makeInviteToken(): string {
+  return randomBytes(24).toString("base64url"); // URL-safe, ~32 chars
+}
+
+export async function createRoomInvite(params: {
+  chatRoomId: number;
+  createdBy: number;
+  expiresInDays?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const room = (
+    await db.select().from(chatRooms).where(eq(chatRooms.id, params.chatRoomId)).limit(1)
+  )[0];
+  if (!room) throw new Error("Sala não encontrada");
+
+  const token = makeInviteToken();
+  let expiresAt: Date | null = null;
+  if (params.expiresInDays != null && params.expiresInDays > 0) {
+    expiresAt = new Date(Date.now() + params.expiresInDays * 24 * 60 * 60 * 1000);
+  }
+
+  await db.insert(roomInvites).values({
+    chatRoomId: params.chatRoomId,
+    inviteToken: token,
+    createdBy: params.createdBy,
+    expiresAt: expiresAt,
+  });
+
+  return {
+    token,
+    chatRoomId: params.chatRoomId,
+    roomName: room.name as string,
+    expiresAt,
+    path: `/convite/${token}`,
+  };
+}
+
+export async function listRoomInvites(chatRoomId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const rows = await db
+    .select({
+      id: roomInvites.id,
+      chatRoomId: roomInvites.chatRoomId,
+      inviteToken: roomInvites.inviteToken,
+      createdBy: roomInvites.createdBy,
+      createdAt: roomInvites.createdAt,
+      expiresAt: roomInvites.expiresAt,
+      creatorName: users.displayName,
+    })
+    .from(roomInvites)
+    .leftJoin(users, eq(users.id, roomInvites.createdBy))
+    .where(eq(roomInvites.chatRoomId, chatRoomId))
+    .orderBy(desc(roomInvites.createdAt));
+
+  const now = Date.now();
+  return rows.map((r: any) => {
+    const exp = r.expiresAt ? new Date(r.expiresAt).getTime() : null;
+    const expired = exp != null && exp < now;
+    return {
+      id: r.id,
+      chatRoomId: r.chatRoomId,
+      token: r.inviteToken,
+      createdBy: r.createdBy,
+      creatorName: r.creatorName || null,
+      createdAt: r.createdAt,
+      expiresAt: r.expiresAt,
+      expired,
+      path: `/convite/${r.inviteToken}`,
+    };
+  });
+}
+
+export async function revokeRoomInvite(inviteId: number, chatRoomId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .delete(roomInvites)
+    .where(and(eq(roomInvites.id, inviteId), eq(roomInvites.chatRoomId, chatRoomId)));
+  return { success: true as const };
+}
+
+export async function getInvitePreview(token: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const rows = await db
+    .select({
+      id: roomInvites.id,
+      chatRoomId: roomInvites.chatRoomId,
+      inviteToken: roomInvites.inviteToken,
+      expiresAt: roomInvites.expiresAt,
+      createdAt: roomInvites.createdAt,
+      roomName: chatRooms.name,
+      roomDescription: chatRooms.description,
+    })
+    .from(roomInvites)
+    .innerJoin(chatRooms, eq(chatRooms.id, roomInvites.chatRoomId))
+    .where(eq(roomInvites.inviteToken, token))
+    .limit(1);
+
+  const invite = rows[0];
+  if (!invite) return null;
+
+  const exp = invite.expiresAt ? new Date(invite.expiresAt).getTime() : null;
+  const expired = exp != null && exp < Date.now();
+  return {
+    token: invite.inviteToken,
+    chatRoomId: invite.chatRoomId,
+    roomName: invite.roomName,
+    roomDescription: invite.roomDescription,
+    expiresAt: invite.expiresAt,
+    expired,
+    valid: !expired,
+  };
+}
+
+export async function findUserByEmail(email: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) return undefined;
+  const result = await db.select().from(users).where(eq(users.email, normalized)).limit(1);
+  return result[0];
+}
+
+/**
+ * Create a brand-new local user for invite acceptance.
+ * Never overwrites existing historical users.
+ */
+export async function createInvitedUser(params: {
+  displayName: string;
+  email?: string | null;
+}): Promise<User> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const displayName = params.displayName.trim();
+  if (!displayName) throw new Error("Nome é obrigatório");
+
+  const email = params.email?.trim().toLowerCase() || null;
+  if (email) {
+    const existing = await findUserByEmail(email);
+    if (existing) {
+      // Update display label if empty-ish, but keep the same user id
+      if (!existing.displayName) {
+        await db
+          .update(users)
+          .set({ displayName, updatedAt: new Date() })
+          .where(eq(users.id, existing.id));
+        const refreshed = await getUserById(existing.id);
+        if (refreshed) return refreshed;
+      }
+      return existing;
+    }
+  }
+
+  const openId = `invite-${randomBytes(16).toString("hex")}`;
+  const now = new Date();
+  const result = await db.insert(users).values({
+    openId,
+    name: displayName,
+    displayName,
+    email: email,
+    loginMethod: "invite",
+    role: "user",
+    createdAt: now,
+    updatedAt: now,
+    lastSignedIn: now,
+  } as any);
+
+  const insertId = Number((result as any)?.[0]?.insertId ?? (result as any)?.insertId ?? 0);
+  if (!insertId) {
+    // fallback: lookup by openId
+    const byOpen = await getUserByOpenId(openId);
+    if (!byOpen) throw new Error("Falha ao criar usuário convidado");
+    return byOpen;
+  }
+  const created = await getUserById(insertId);
+  if (!created) throw new Error("Falha ao carregar usuário convidado");
+  return created;
+}
+
+/**
+ * Accept invite: attach existing or brand-new user to the room and return membership result.
+ * Does not delete/alter unrelated rooms or history.
+ */
+export async function acceptRoomInvite(params: {
+  token: string;
+  displayName: string;
+  email?: string | null;
+  existingUserId?: number | null;
+}): Promise<{ user: User; chatRoomId: number; roomName: string; alreadyMember: boolean }> {
+  const preview = await getInvitePreview(params.token);
+  if (!preview) throw new Error("Convite inválido ou expirado");
+  if (!preview.valid) throw new Error("Este convite expirou");
+
+  let user: User | undefined;
+  if (params.existingUserId) {
+    user = await getUserById(params.existingUserId);
+  }
+  if (!user) {
+    user = await createInvitedUser({
+      displayName: params.displayName,
+      email: params.email,
+    });
+  }
+
+  const already = await isRoomMember(preview.chatRoomId, user.id, { isGlobalAdmin: false });
+  if (!already) {
+    await ensureRoomMembership(preview.chatRoomId, user.id);
+  }
+
+  await touchUserLastSignedIn(user.id);
+
+  return {
+    user,
+    chatRoomId: preview.chatRoomId,
+    roomName: preview.roomName,
+    alreadyMember: already,
+  };
+}
 
 // Get task by taskNumber in a specific chat room
 export async function getTaskByNumber(chatRoomId: number, taskNumber: number) {

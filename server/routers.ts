@@ -202,6 +202,114 @@ export const appRouter = router({
         }
         return await db.removeParticipant(input.chatRoomId, input.userId);
       }),
+    /** Phase 2 — create shareable invite link for a room (admin/creator). */
+    createInvite: protectedProcedure
+      .input(z.object({
+        chatRoomId: z.number(),
+        expiresInDays: z.number().int().min(1).max(90).optional().nullable(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await assertCanManageRoom(ctx, input.chatRoomId);
+        const invite = await db.createRoomInvite({
+          chatRoomId: input.chatRoomId,
+          createdBy: ctx.user.id,
+          expiresInDays: input.expiresInDays ?? 14,
+        });
+        const base = (ENV.appUrl || "").replace(/\/$/, "") || "";
+        return {
+          ...invite,
+          url: base ? `${base}${invite.path}` : invite.path,
+        };
+      }),
+    listInvites: protectedProcedure
+      .input(z.object({ chatRoomId: z.number() }))
+      .query(async ({ input, ctx }) => {
+        await assertCanManageRoom(ctx, input.chatRoomId);
+        const invites = await db.listRoomInvites(input.chatRoomId);
+        const base = (ENV.appUrl || "").replace(/\/$/, "") || "";
+        return invites.map((inv: {
+          id: number;
+          chatRoomId: number;
+          token: string;
+          path: string;
+          expired: boolean;
+          expiresAt: Date | null;
+          createdAt: Date;
+          createdBy: number;
+          creatorName: string | null;
+        }) => ({
+          ...inv,
+          url: base ? `${base}${inv.path}` : inv.path,
+        }));
+      }),
+    revokeInvite: protectedProcedure
+      .input(z.object({
+        chatRoomId: z.number(),
+        inviteId: z.number(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await assertCanManageRoom(ctx, input.chatRoomId);
+        return await db.revokeRoomInvite(input.inviteId, input.chatRoomId);
+      }),
+    /** Public preview of an invite (no auth). */
+    invitePreview: publicProcedure
+      .input(z.object({ token: z.string().min(8).max(128) }))
+      .query(async ({ input }) => {
+        const preview = await db.getInvitePreview(input.token);
+        if (!preview) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Convite inválido" });
+        }
+        return preview;
+      }),
+    /** Accept invite → create/join user into that room only + set session cookie. */
+    acceptInvite: publicProcedure
+      .input(z.object({
+        token: z.string().min(8).max(128),
+        displayName: z.string().min(1).max(255),
+        email: z
+          .string()
+          .max(320)
+          .optional()
+          .transform((v) => (v && v.trim() ? v.trim() : undefined))
+          .pipe(z.string().email().optional()),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        try {
+          const result = await db.acceptRoomInvite({
+            token: input.token,
+            displayName: input.displayName,
+            email: input.email || null,
+            existingUserId: ctx.user?.id ?? null,
+          });
+
+          const label =
+            result.user.displayName || result.user.name || `User ${result.user.id}`;
+          const sessionToken = await createLocalSessionToken({
+            openId: result.user.openId,
+            name: label,
+            userId: result.user.id,
+          });
+          const cookieOptions = getSessionCookieOptions(ctx.req);
+          ctx.res.cookie(COOKIE_NAME, sessionToken, {
+            ...cookieOptions,
+            maxAge: ONE_YEAR_MS,
+          });
+
+          return {
+            success: true as const,
+            user: result.user,
+            chatRoomId: result.chatRoomId,
+            roomName: result.roomName,
+            alreadyMember: result.alreadyMember,
+          };
+        } catch (error: any) {
+          const msg = String(error?.message || error);
+          if (msg.includes("expirou") || msg.includes("inválido")) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: msg });
+          }
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: msg });
+        }
+      }),
     deleteRoom: protectedProcedure
       .input(z.object({
         chatRoomId: z.number(),

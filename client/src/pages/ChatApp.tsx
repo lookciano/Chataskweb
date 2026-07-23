@@ -144,6 +144,10 @@ export default function ChatApp() {
     { chatRoomId: selectedRoom || 0 },
     { enabled: !!selectedRoom && !!user && showParticipantsModal && canManageRoom }
   );
+  const invitesQuery = trpc.chat.listInvites.useQuery(
+    { chatRoomId: selectedRoom || 0 },
+    { enabled: !!selectedRoom && !!user && showParticipantsModal && canManageRoom }
+  );
 
   const reactionsQuery = trpc.messages.reactions.useQuery(
     {
@@ -188,6 +192,26 @@ export default function ChatApp() {
       toast.success("Participante removido da sala (conta preservada)");
     },
     onError: (error) => toast.error(error.message || "Falha ao remover"),
+  });
+  const createInviteMutation = trpc.chat.createInvite.useMutation({
+    onSuccess: async (invite) => {
+      await utils.chat.listInvites.invalidate();
+      const url = invite.url || `${window.location.origin}${invite.path}`;
+      try {
+        await navigator.clipboard.writeText(url);
+        toast.success("Link de convite copiado", { description: url });
+      } catch {
+        toast.success("Convite criado", { description: url, duration: 8000 });
+      }
+    },
+    onError: (error) => toast.error(error.message || "Falha ao criar convite"),
+  });
+  const revokeInviteMutation = trpc.chat.revokeInvite.useMutation({
+    onSuccess: async () => {
+      await utils.chat.listInvites.invalidate();
+      toast.success("Convite revogado");
+    },
+    onError: (error) => toast.error(error.message || "Falha ao revogar"),
   });
   const updateTaskMutation = trpc.tasks.updateStatus.useMutation();
   const deleteTaskMutation = trpc.tasks.deleteTask.useMutation({
@@ -2665,6 +2689,83 @@ export default function ChatApp() {
                 {(candidateMembersQuery.data || []).length === 0 && !candidateMembersQuery.isLoading && (
                   <p className="text-[11px] text-slate-500">Nenhum usuário disponível fora da sala.</p>
                 )}
+
+                <div className="pt-2 border-t border-slate-200 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-medium text-slate-700">Convidar pessoa nova (link)</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 border-slate-200 text-slate-700"
+                      disabled={!selectedRoom || createInviteMutation.isPending}
+                      onClick={() => {
+                        if (!selectedRoom) return;
+                        createInviteMutation.mutate({
+                          chatRoomId: selectedRoom,
+                          expiresInDays: 14,
+                        });
+                      }}
+                    >
+                      Gerar link
+                    </Button>
+                  </div>
+                  <p className="text-[11px] text-slate-500 leading-snug">
+                    Quem abrir o link entra só nesta sala. Expira em 14 dias. Pode revogar a qualquer momento.
+                  </p>
+                  <div className="space-y-1.5 max-h-28 overflow-y-auto">
+                    {(invitesQuery.data || []).map((inv: any) => (
+                      <div
+                        key={inv.id}
+                        className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2 py-1.5"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[11px] text-slate-700 truncate font-mono">{inv.url || inv.path}</p>
+                          <p className="text-[10px] text-slate-400">
+                            {inv.expired ? "Expirado" : "Ativo"}
+                            {inv.expiresAt
+                              ? ` · até ${new Date(inv.expiresAt).toLocaleDateString("pt-BR")}`
+                              : ""}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          className="text-[11px] text-slate-500 hover:text-teal-700 shrink-0"
+                          onClick={async () => {
+                            const url = inv.url || `${window.location.origin}${inv.path}`;
+                            try {
+                              await navigator.clipboard.writeText(url);
+                              toast.success("Link copiado");
+                            } catch {
+                              toast.message(url);
+                            }
+                          }}
+                        >
+                          Copiar
+                        </button>
+                        {!inv.expired && (
+                          <button
+                            type="button"
+                            className="text-[11px] text-slate-500 hover:text-red-600 shrink-0"
+                            disabled={revokeInviteMutation.isPending}
+                            onClick={() => {
+                              if (!selectedRoom) return;
+                              revokeInviteMutation.mutate({
+                                chatRoomId: selectedRoom,
+                                inviteId: inv.id,
+                              });
+                            }}
+                          >
+                            Revogar
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    {(invitesQuery.data || []).length === 0 && !invitesQuery.isLoading && (
+                      <p className="text-[11px] text-slate-400">Nenhum convite gerado ainda.</p>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
 
