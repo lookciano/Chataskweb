@@ -6,6 +6,7 @@ import { ResizableDivider } from "@/components/ResizableDivider";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -75,7 +76,7 @@ export default function ChatApp() {
   const [mentionQuery, setMentionQuery] = useState("");
   const [mentionStart, setMentionStart] = useState<number | null>(null);
   const [mentionHighlight, setMentionHighlight] = useState(0);
-  const messageInputRef = useRef<HTMLInputElement | null>(null);
+  const messageInputRef = useRef<HTMLTextAreaElement | null>(null);
   const seenMessageIdsRef = useRef<Set<number>>(new Set());
   const bootstrappedNotifyRef = useRef(false);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -706,9 +707,24 @@ export default function ChatApp() {
   const handleComposerChange = (value: string, caret: number) => {
     setMessageInput(value);
     updateMentionFromInput(value, caret);
+    // Grow like WhatsApp: ~1 line min, ~4 lines max, then internal scroll
+    requestAnimationFrame(() => {
+      const el = messageInputRef.current;
+      if (!el) return;
+      el.style.height = "auto";
+      const styles = window.getComputedStyle(el);
+      const lineHeight = parseFloat(styles.lineHeight) || 20;
+      const padY =
+        (parseFloat(styles.paddingTop) || 0) + (parseFloat(styles.paddingBottom) || 0);
+      const minH = lineHeight + padY; // ~1 line
+      const maxH = lineHeight * 4 + padY; // ~4 lines visible
+      const next = Math.min(Math.max(el.scrollHeight, minH), maxH);
+      el.style.height = `${next}px`;
+      el.style.overflowY = el.scrollHeight > maxH + 1 ? "auto" : "hidden";
+    });
   };
 
-  const handleComposerKeyDown = (e: import("react").KeyboardEvent<HTMLInputElement>) => {
+  const handleComposerKeyDown = (e: import("react").KeyboardEvent<HTMLTextAreaElement>) => {
     if (mentionOpen && filteredMentionCandidates.length > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -1136,6 +1152,12 @@ export default function ChatApp() {
       // Limpar input imediatamente
       setMessageInput("");
       closeMentionMenu();
+      requestAnimationFrame(() => {
+        const el = messageInputRef.current;
+        if (!el) return;
+        el.style.height = "auto";
+        el.style.overflowY = "hidden";
+      });
       setReplyingToId(null);
       setReplyingToContent("");
 
@@ -1740,7 +1762,7 @@ export default function ChatApp() {
                                 <p className="text-slate-700 break-words">{getRepliedMessage(msg.replyToId)?.content}</p>
                               </div>
                             )}
-                            <p className="text-sm leading-relaxed break-words">{renderMessageContent(msg.content)}</p>
+                            <p className="text-sm leading-relaxed break-words whitespace-pre-wrap">{renderMessageContent(msg.content)}</p>
                             {(messageMentionsMe(msg.content) || isReplyToMe(msg)) && msg.senderId !== user?.id && (
                               <div className="mt-1.5 flex flex-wrap gap-1">
                                 {messageMentionsMe(msg.content) && (
@@ -1861,22 +1883,23 @@ export default function ChatApp() {
                     </button>
                   </div>
                 )}
-                <div className="relative flex gap-2 items-center">
+                <div className="relative flex gap-2 items-end">
                   {mentionDropdown}
-                  <Input
+                  <Textarea
                     ref={messageInputRef}
                     value={messageInput}
                     onChange={(e) => handleComposerChange(e.target.value, e.target.selectionStart ?? e.target.value.length)}
                     onClick={(e) => updateMentionFromInput(e.currentTarget.value, e.currentTarget.selectionStart ?? 0)}
                     onKeyUp={(e) => updateMentionFromInput(e.currentTarget.value, e.currentTarget.selectionStart ?? 0)}
                     onKeyDown={handleComposerKeyDown}
-                    placeholder="Mensagem… use @ para mencionar"
-                    className="flex-1 min-h-11"
+                    placeholder="Mensagem… Enter envia · Shift+Enter quebra linha · @ menciona"
+                    rows={1}
+                    className="flex-1 min-h-[44px] max-h-[6.5rem] resize-none overflow-y-hidden py-2.5 leading-5"
                   />
                   <Button
                     onClick={handleSendMessage}
                     disabled={!messageInput.trim()}
-                    className="bg-teal-600 hover:bg-teal-700 text-white shadow-none min-h-11 px-4"
+                    className="bg-teal-600 hover:bg-teal-700 text-white shadow-none min-h-11 px-4 shrink-0"
                   >
                     Enviar
                   </Button>
@@ -2274,7 +2297,7 @@ export default function ChatApp() {
                                 <p className="text-slate-700 break-words">{getRepliedMessage(msg.replyToId)?.content}</p>
                               </div>
                             )}
-                            <p className="text-sm leading-relaxed break-words">{renderMessageContent(msg.content)}</p>
+                            <p className="text-sm leading-relaxed break-words whitespace-pre-wrap">{renderMessageContent(msg.content)}</p>
                             {(messageMentionsMe(msg.content) || isReplyToMe(msg)) && msg.senderId !== user?.id && (
                               <div className="mt-1.5 flex flex-wrap gap-1">
                                 {messageMentionsMe(msg.content) && (
@@ -2395,22 +2418,23 @@ export default function ChatApp() {
                     </button>
                   </div>
                 )}
-                <div className="relative flex gap-2">
+                <div className="relative flex gap-2 items-end">
                   {mentionDropdown}
-                  <Input
+                  <Textarea
                     ref={messageInputRef}
                     value={messageInput}
                     onChange={(e) => handleComposerChange(e.target.value, e.target.selectionStart ?? e.target.value.length)}
                     onClick={(e) => updateMentionFromInput(e.currentTarget.value, e.currentTarget.selectionStart ?? 0)}
                     onKeyUp={(e) => updateMentionFromInput(e.currentTarget.value, e.currentTarget.selectionStart ?? 0)}
                     onKeyDown={handleComposerKeyDown}
-                    placeholder="Mensagem… use @ para mencionar"
-                    className="flex-1"
+                    placeholder="Mensagem… Enter envia · Shift+Enter quebra linha · @ menciona"
+                    rows={1}
+                    className="flex-1 min-h-[44px] max-h-[6.5rem] resize-none overflow-y-hidden py-2.5 leading-5"
                   />
                   <Button
                     onClick={handleSendMessage}
                     disabled={!messageInput.trim()}
-                    className="bg-teal-600 hover:bg-teal-700 text-white shadow-none"
+                    className="bg-teal-600 hover:bg-teal-700 text-white shadow-none min-h-11 shrink-0"
                   >
                     Enviar
                   </Button>
