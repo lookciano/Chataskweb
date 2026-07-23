@@ -94,6 +94,7 @@ export default function ChatApp() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
   const [mobileView, setMobileView] = useState<"chat" | "rooms" | "participants" | "tasks">("chat");
   const [showParticipantsModal, setShowParticipantsModal] = useState(false);
+  const [memberToAddId, setMemberToAddId] = useState<string>("");
   const [hasUnreadBelow, setHasUnreadBelow] = useState(false);
   const [isUserNearBottom, setIsUserNearBottom] = useState(true);
   const [filterKeyword, setFilterKeyword] = useState("");
@@ -117,11 +118,11 @@ export default function ChatApp() {
   const { widths, isResizing, handleMouseDown } = useResizableColumns();
 
   // Queries
-  const roomsQuery = trpc.chat.rooms.useQuery();
+  const roomsQuery = trpc.chat.rooms.useQuery(undefined, { enabled: !!user });
   const messagesQuery = trpc.messages.list.useQuery(
     { chatRoomId: selectedRoom || 0, limit: 50 },
     {
-      enabled: !!selectedRoom,
+      enabled: !!selectedRoom && !!user,
       // Initial page only — older history + polling are manual to preserve infinite-scroll state.
       refetchOnWindowFocus: false,
       staleTime: 5_000,
@@ -129,11 +130,19 @@ export default function ChatApp() {
   );
   const tasksQuery = trpc.tasks.list.useQuery(
     { chatRoomId: selectedRoom || 0 },
-    { enabled: !!selectedRoom }
+    { enabled: !!selectedRoom && !!user }
   );
   const participantsQuery = trpc.chat.getParticipants.useQuery(
     { chatRoomId: selectedRoom || 0 },
-    { enabled: !!selectedRoom }
+    { enabled: !!selectedRoom && !!user }
+  );
+  const canManageRoom =
+    !!user &&
+    (user.role === "admin" ||
+      !!(roomsQuery.data || []).find((r: any) => r.id === selectedRoom && r.createdBy === user.id));
+  const candidateMembersQuery = trpc.chat.listCandidateMembers.useQuery(
+    { chatRoomId: selectedRoom || 0 },
+    { enabled: !!selectedRoom && !!user && showParticipantsModal && canManageRoom }
   );
 
   const reactionsQuery = trpc.messages.reactions.useQuery(
@@ -163,6 +172,23 @@ export default function ChatApp() {
   const sendMessageMutation = trpc.messages.send.useMutation();
   const createRoomMutation = trpc.chat.createRoom.useMutation();
   const deleteRoomMutation = trpc.chat.deleteRoom.useMutation();
+  const addParticipantMutation = trpc.chat.addParticipant.useMutation({
+    onSuccess: async () => {
+      await utils.chat.getParticipants.invalidate();
+      await utils.chat.listCandidateMembers.invalidate();
+      setMemberToAddId("");
+      toast.success("Participante adicionado à sala");
+    },
+    onError: (error) => toast.error(error.message || "Falha ao adicionar"),
+  });
+  const removeParticipantMutation = trpc.chat.removeParticipant.useMutation({
+    onSuccess: async () => {
+      await utils.chat.getParticipants.invalidate();
+      await utils.chat.listCandidateMembers.invalidate();
+      toast.success("Participante removido da sala (conta preservada)");
+    },
+    onError: (error) => toast.error(error.message || "Falha ao remover"),
+  });
   const updateTaskMutation = trpc.tasks.updateStatus.useMutation();
   const deleteTaskMutation = trpc.tasks.deleteTask.useMutation({
     onSuccess: async () => {
@@ -2591,9 +2617,12 @@ export default function ChatApp() {
       {/* Participants Modal */}
       {showParticipantsModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <Card className="p-6 w-96 max-w-full mx-4 max-h-96 overflow-y-auto">
+          <Card className="p-6 w-96 max-w-full mx-4 max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-base font-semibold text-slate-900">Participantes ({participants.length})</h3>
+              <div>
+                <h3 className="text-base font-semibold text-slate-900">Participantes ({participants.length})</h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">Acesso só de quem está nesta lista</p>
+              </div>
               <button
                 onClick={() => setShowParticipantsModal(false)}
                 className="text-slate-400 hover:text-slate-600"
@@ -2601,18 +2630,77 @@ export default function ChatApp() {
                 <X className="w-5 h-5" />
               </button>
             </div>
+
+            {canManageRoom && (
+              <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+                <p className="text-xs font-medium text-slate-700">Adicionar membro já cadastrado</p>
+                <div className="flex gap-2">
+                  <select
+                    className="flex-1 h-9 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-800"
+                    value={memberToAddId}
+                    onChange={(e) => setMemberToAddId(e.target.value)}
+                  >
+                    <option value="">Selecione…</option>
+                    {(candidateMembersQuery.data || []).map((u: any) => (
+                      <option key={u.id} value={String(u.id)}>
+                        {u.displayName || u.name || `User ${u.id}`}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    type="button"
+                    className="bg-teal-600 hover:bg-teal-700 text-white shadow-none shrink-0"
+                    disabled={!memberToAddId || addParticipantMutation.isPending}
+                    onClick={() => {
+                      if (!selectedRoom || !memberToAddId) return;
+                      addParticipantMutation.mutate({
+                        chatRoomId: selectedRoom,
+                        userId: Number(memberToAddId),
+                      });
+                    }}
+                  >
+                    Add
+                  </Button>
+                </div>
+                {(candidateMembersQuery.data || []).length === 0 && !candidateMembersQuery.isLoading && (
+                  <p className="text-[11px] text-slate-500">Nenhum usuário disponível fora da sala.</p>
+                )}
+              </div>
+            )}
+
             <div className="space-y-2">
               {participants.map((p) => (
                 <div key={p.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
                   <div className="w-10 h-10 rounded-full bg-teal-100 flex items-center justify-center text-sm font-bold text-teal-900">
                     {(p.displayName || p.userName || "U")[0].toUpperCase()}
                   </div>
-                  <div className="flex-1">
-                    <p className="font-medium text-slate-900">{p.displayName || p.userName}</p>
-                    <p className="text-xs text-slate-500">{p.email}</p>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-slate-900 truncate">{p.displayName || p.userName}</p>
+                    <p className="text-xs text-slate-500 truncate">{p.email}</p>
                   </div>
+                  {canManageRoom && p.userId !== user?.id && (
+                    <button
+                      type="button"
+                      title="Remover da sala (não apaga o usuário)"
+                      className="text-xs text-slate-500 hover:text-red-600 px-2 py-1 rounded hover:bg-red-50 shrink-0"
+                      disabled={removeParticipantMutation.isPending}
+                      onClick={() => {
+                        if (!selectedRoom) return;
+                        if (!confirm(`Remover ${p.displayName || p.userName} desta sala? A conta e o histórico permanecem.`)) return;
+                        removeParticipantMutation.mutate({
+                          chatRoomId: selectedRoom,
+                          userId: p.userId,
+                        });
+                      }}
+                    >
+                      Remover
+                    </button>
+                  )}
                 </div>
               ))}
+              {participants.length === 0 && (
+                <p className="text-sm text-slate-500 text-center py-4">Nenhum participante nesta sala.</p>
+              )}
             </div>
           </Card>
         </div>

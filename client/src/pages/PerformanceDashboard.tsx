@@ -56,8 +56,8 @@ export default function PerformanceDashboard() {
   const [period, setPeriod] = useState("month");
 
   // Queries
-  const roomsQuery = trpc.chat.rooms.useQuery();
-  const allTasksQuery = trpc.tasks.allTasks.useQuery({});
+  const roomsQuery = trpc.chat.rooms.useQuery(undefined, { enabled: !!user });
+  const allTasksQuery = trpc.tasks.allTasks.useQuery({}, { enabled: !!user });
 
   const allTasks = allTasksQuery.data || [];
   const rooms = roomsQuery.data || [];

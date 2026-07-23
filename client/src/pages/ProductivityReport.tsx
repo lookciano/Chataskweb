@@ -64,10 +64,10 @@ export default function ProductivityReport() {
   const [showChartResponsibleFilter, setShowChartResponsibleFilter] = useState(false);
 
   // Queries
-  const roomsQuery = trpc.chat.rooms.useQuery();
+  const roomsQuery = trpc.chat.rooms.useQuery(undefined, { enabled: !!user });
   const tasksQuery = trpc.tasks.list.useQuery(
     { chatRoomId: selectedRoom || 0 },
-    { enabled: !!selectedRoom }
+    { enabled: !!selectedRoom && !!user }
   );
 
   const tasks = useMemo(() => {

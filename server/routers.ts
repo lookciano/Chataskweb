@@ -16,6 +16,44 @@ import { generateWeeklySummary, calculateWeeklySummaryData } from "./weekly-summ
 import { validateAndFixRoomTasks, getParticipantNameVariations } from "./task-name-validator";
 import { getUniqueParticipantNames } from "./participant-name-matcher";
 
+async function assertRoomAccess(
+  ctx: { user: { id: number; role?: string | null } | null },
+  chatRoomId: number,
+  opts?: { allowAdminBypass?: boolean }
+) {
+  if (!ctx.user) {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "Selecione sua identidade para continuar" });
+  }
+  const isGlobalAdmin = ctx.user.role === "admin";
+  if (opts?.allowAdminBypass !== false && isGlobalAdmin) return;
+  const ok = await db.isRoomMember(chatRoomId, ctx.user.id, { isGlobalAdmin });
+  if (!ok) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Você não tem acesso a esta sala",
+    });
+  }
+}
+
+async function assertCanManageRoom(
+  ctx: { user: { id: number; role?: string | null } | null },
+  chatRoomId: number
+) {
+  if (!ctx.user) {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "Selecione sua identidade para continuar" });
+  }
+  // Phase 1: global admin OR room creator
+  if (ctx.user.role === "admin") return;
+  const rooms = await db.getChatRooms();
+  const room = (rooms as any[]).find((r) => r.id === chatRoomId);
+  if (room && room.createdBy === ctx.user.id) return;
+  throw new TRPCError({
+    code: "FORBIDDEN",
+    message: "Apenas admin ou criador da sala pode gerir participantes",
+  });
+}
+
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -91,8 +129,8 @@ export const appRouter = router({
   }),
 
   chat: router({
-    rooms: publicProcedure.query(async () => {
-      return await db.getChatRooms();
+    rooms: protectedProcedure.query(async ({ ctx }) => {
+      return await db.getChatRoomsForUser(ctx.user.id, ctx.user.role === "admin");
     }),
     createRoom: protectedProcedure
       .input(z.object({
@@ -109,38 +147,79 @@ export const appRouter = router({
           description: input.description,
           createdBy: ctx.user.id,
         });
+        // Creator is automatically a member of the new room
+        const insertId = Number((result as any)?.insertId || (result as any)?.id || 0);
+        if (insertId) {
+          await db.ensureRoomMembership(insertId, ctx.user.id, { isAdmin: true });
+        }
         return result;
       }),
-    getParticipants: publicProcedure
+    getParticipants: protectedProcedure
       .input(z.object({
         chatRoomId: z.number(),
       }))
-      .query(async ({ input }) => {
+      .query(async ({ input, ctx }) => {
+        await assertRoomAccess(ctx, input.chatRoomId);
         return await db.getParticipants(input.chatRoomId);
       }),
-    addParticipant: publicProcedure
+    /** Users that can be added to a room (existing accounts only in Phase 1). */
+    listCandidateMembers: protectedProcedure
+      .input(z.object({ chatRoomId: z.number() }))
+      .query(async ({ input, ctx }) => {
+        await assertCanManageRoom(ctx, input.chatRoomId);
+        const all = await db.listSelectableUsers();
+        const members = await db.getParticipants(input.chatRoomId);
+        const memberIds = new Set(members.map((m: any) => m.userId));
+        return all.filter((u) => !memberIds.has(u.id));
+      }),
+    addParticipant: protectedProcedure
       .input(z.object({
         chatRoomId: z.number(),
         userId: z.number(),
       }))
-      .mutation(async ({ input }) => {
-        return await db.addParticipant(input.chatRoomId, input.userId);
+      .mutation(async ({ input, ctx }) => {
+        await assertCanManageRoom(ctx, input.chatRoomId);
+        const user = await db.getUserById(input.userId);
+        if (!user) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Usuário não encontrado" });
+        }
+        await db.ensureRoomMembership(input.chatRoomId, input.userId);
+        return { success: true as const };
+      }),
+    removeParticipant: protectedProcedure
+      .input(z.object({
+        chatRoomId: z.number(),
+        userId: z.number(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await assertCanManageRoom(ctx, input.chatRoomId);
+        // Never delete the user account — only room membership
+        if (input.userId === ctx.user.id && ctx.user.role !== "admin") {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Peça a um admin para removê-lo, ou use outra identidade",
+          });
+        }
+        return await db.removeParticipant(input.chatRoomId, input.userId);
       }),
     deleteRoom: protectedProcedure
       .input(z.object({
         chatRoomId: z.number(),
         password: z.string(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         if (input.password !== ENV.roomAdminPassword) {
           throw new TRPCError({ code: "FORBIDDEN", message: "Senha incorreta" });
+        }
+        if (ctx.user.role !== "admin") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Apenas admin pode excluir salas" });
         }
         return await db.deleteChatRoom(input.chatRoomId);
       }),
   }),
 
   messages: router({
-    list: publicProcedure
+    list: protectedProcedure
       .input(z.object({
         chatRoomId: z.number(),
         limit: z.number().min(1).max(100).optional(),
@@ -151,7 +230,8 @@ export const appRouter = router({
         afterId: z.number().optional(),
         afterCreatedAt: z.union([z.string(), z.date()]).optional(),
       }))
-      .query(async ({ input }) => {
+      .query(async ({ input, ctx }) => {
+        await assertRoomAccess(ctx, input.chatRoomId);
         const toDate = (v: string | Date | undefined) => {
           if (!v) return undefined;
           return v instanceof Date ? v : new Date(v);
@@ -172,6 +252,7 @@ export const appRouter = router({
         replyToId: z.number().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
+        await assertRoomAccess(ctx, input.chatRoomId);
         const senderName = db.resolveUserDisplayName(ctx.user);
         const message = await db.createMessage({
           chatRoomId: input.chatRoomId,
@@ -180,7 +261,7 @@ export const appRouter = router({
           content: input.content,
           replyToId: input.replyToId,
         });
-        await db.addParticipant(input.chatRoomId, ctx.user.id);
+        // Do NOT auto-join senders anymore — membership is explicit (Phase 1)
         return message;
       }),
     getReplies: publicProcedure
@@ -191,12 +272,13 @@ export const appRouter = router({
         return await db.getMessageWithReplies(input.messageId);
       }),
     /** Thumbs-up (joinha) summaries for visible messages in a room. */
-    reactions: publicProcedure
+    reactions: protectedProcedure
       .input(z.object({
         chatRoomId: z.number(),
         messageIds: z.array(z.number()).max(300).optional(),
       }))
       .query(async ({ input, ctx }) => {
+        await assertRoomAccess(ctx, input.chatRoomId);
         return await db.listThumbsUpForRoom({
           chatRoomId: input.chatRoomId,
           messageIds: input.messageIds,
@@ -214,11 +296,12 @@ export const appRouter = router({
   }),
 
   tasks: router({
-    list: publicProcedure
+    list: protectedProcedure
       .input(z.object({
         chatRoomId: z.number(),
       }))
-      .query(async ({ input }) => {
+      .query(async ({ input, ctx }) => {
+        await assertRoomAccess(ctx, input.chatRoomId);
         return await db.getTasksWithDetails(input.chatRoomId);
       }),
     myTasks: protectedProcedure
@@ -240,7 +323,10 @@ export const appRouter = router({
         taskId: z.number(),
         status: z.enum(["pending", "completed"]),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
+        const task = await db.getTaskById(input.taskId);
+        if (!task) throw new TRPCError({ code: "NOT_FOUND", message: "Tarefa não encontrada" });
+        await assertRoomAccess(ctx, task.chatRoomId);
         return await db.updateTaskStatus(input.taskId, input.status);
       }),
     extractFromMessage: protectedProcedure
@@ -249,6 +335,7 @@ export const appRouter = router({
         chatRoomId: z.number(),
       }))
       .mutation(async ({ input, ctx }) => {
+        await assertRoomAccess(ctx, input.chatRoomId);
         // Get room participants to map mentioned names
         const participants = await db.getParticipants(input.chatRoomId);
         const participantNames = participants.map((p: any) => p.displayName).filter(Boolean) as string[];
@@ -305,6 +392,7 @@ export const appRouter = router({
         if (!task) {
           throw new Error("Task not found");
         }
+        await assertRoomAccess(ctx, task.chatRoomId);
 
         const update = await interpretResponseForTaskUpdate(
           task.description,
@@ -329,7 +417,8 @@ export const appRouter = router({
         chatRoomId: z.number(),
         messageContent: z.string(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
+        await assertRoomAccess(ctx, input.chatRoomId);
         console.log("[ROUTER] detectCompletionInMessage called with:", { chatRoomId: input.chatRoomId, messageContent: input.messageContent });
         const allTasks = await db.getTasksWithDetails(input.chatRoomId);
         console.log("[ROUTER] Found tasks:", allTasks.length);
@@ -398,7 +487,8 @@ export const appRouter = router({
         chatRoomId: z.number(),
         messageContent: z.string(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
+        await assertRoomAccess(ctx, input.chatRoomId);
         console.log("[ROUTER] detectAssignmentInMessage called with:", { chatRoomId: input.chatRoomId, messageContent: input.messageContent });
         const allTasks = await db.getTasksWithDetails(input.chatRoomId);
         console.log("[ROUTER] Found tasks:", allTasks.length);

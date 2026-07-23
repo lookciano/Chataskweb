@@ -9,6 +9,7 @@ import {
   tasks,
   chatRoomParticipants,
   messageReactions,
+  roomMembers,
   InsertChatRoom,
   InsertMessage,
   InsertTask,
@@ -268,7 +269,44 @@ export async function createChatRoom(input: InsertChatRoom) {
   if (!db) throw new Error("Database not available");
   
   const result = await db.insert(chatRooms).values(input);
-  return result;
+  const insertId = Number((result as any)?.[0]?.insertId ?? (result as any)?.insertId ?? 0);
+  return { ...(result as any), insertId, id: insertId };
+}
+
+/**
+ * Return rooms a user may open.
+ * - Global admin: all rooms
+ * - Others: rooms where they are in chatRoomParticipants OR roomMembers(approved)
+ */
+export async function getChatRoomsForUser(userId: number, isGlobalAdmin = false) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  if (isGlobalAdmin) {
+    return await db.select().from(chatRooms).orderBy(desc(chatRooms.updatedAt));
+  }
+
+  const participantRooms = await db
+    .select({ chatRoomId: chatRoomParticipants.chatRoomId })
+    .from(chatRoomParticipants)
+    .where(eq(chatRoomParticipants.userId, userId));
+
+  const memberRooms = await db
+    .select({ chatRoomId: roomMembers.chatRoomId })
+    .from(roomMembers)
+    .where(and(eq(roomMembers.userId, userId), eq(roomMembers.status, "approved")));
+
+  const ids = Array.from(
+    new Set([
+      ...participantRooms.map((r: { chatRoomId: number }) => r.chatRoomId),
+      ...memberRooms.map((r: { chatRoomId: number }) => r.chatRoomId),
+    ])
+  );
+
+  if (!ids.length) return [];
+
+  const rooms = await db.select().from(chatRooms).orderBy(desc(chatRooms.updatedAt));
+  return rooms.filter((r: { id: number }) => ids.includes(r.id));
 }
 
 export async function getChatRooms() {
@@ -276,6 +314,160 @@ export async function getChatRooms() {
   if (!db) throw new Error("Database not available");
   
   return await db.select().from(chatRooms).orderBy(chatRooms.updatedAt);
+}
+
+/** True if user may access room content (member or global admin). */
+export async function isRoomMember(
+  chatRoomId: number,
+  userId: number,
+  opts?: { isGlobalAdmin?: boolean }
+): Promise<boolean> {
+  if (opts?.isGlobalAdmin) return true;
+  const db = await getDb();
+  if (!db) return false;
+
+  const asParticipant = await db
+    .select({ id: chatRoomParticipants.id })
+    .from(chatRoomParticipants)
+    .where(
+      and(
+        eq(chatRoomParticipants.chatRoomId, chatRoomId),
+        eq(chatRoomParticipants.userId, userId)
+      )
+    )
+    .limit(1);
+  if (asParticipant[0]) return true;
+
+  const asMember = await db
+    .select({ id: roomMembers.id })
+    .from(roomMembers)
+    .where(
+      and(
+        eq(roomMembers.chatRoomId, chatRoomId),
+        eq(roomMembers.userId, userId),
+        eq(roomMembers.status, "approved")
+      )
+    )
+    .limit(1);
+  return Boolean(asMember[0]);
+}
+
+/**
+ * Ensure membership mirrored in both chatRoomParticipants and roomMembers(approved).
+ * Does not create users. Safe to call repeatedly.
+ */
+export async function ensureRoomMembership(
+  chatRoomId: number,
+  userId: number,
+  opts?: { isAdmin?: boolean }
+) {
+  await addParticipant(chatRoomId, userId);
+
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const existing = await db
+    .select()
+    .from(roomMembers)
+    .where(and(eq(roomMembers.chatRoomId, chatRoomId), eq(roomMembers.userId, userId)))
+    .limit(1);
+
+  const now = new Date();
+  if (existing[0]) {
+    await db
+      .update(roomMembers)
+      .set({
+        status: "approved",
+        joinedAt: existing[0].joinedAt || now,
+        isAdmin: opts?.isAdmin ? true : existing[0].isAdmin,
+      })
+      .where(eq(roomMembers.id, existing[0].id));
+    return existing[0];
+  }
+
+  await db.insert(roomMembers).values({
+    chatRoomId,
+    userId,
+    isAdmin: Boolean(opts?.isAdmin),
+    status: "approved",
+    joinedAt: now,
+  });
+}
+
+/**
+ * Phase 1 backfill (data-preserving):
+ * - Keep all existing chatRoomParticipants
+ * - Add missing participants discovered from message senders / task parties in each room
+ * - Mirror everyone into roomMembers as approved
+ * Never deletes users/messages/tasks.
+ */
+export async function backfillRoomMembershipPhase1(): Promise<{
+  rooms: number;
+  participantsAdded: number;
+  membersMirrored: number;
+}> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const rooms = await db.select({ id: chatRooms.id, createdBy: chatRooms.createdBy }).from(chatRooms);
+  let participantsAdded = 0;
+  let membersMirrored = 0;
+
+  for (const room of rooms as Array<{ id: number; createdBy: number }>) {
+    const roomId = room.id;
+    const userIds = new Set<number>();
+
+    if (room.createdBy) userIds.add(room.createdBy);
+
+    const parts = await db
+      .select({ userId: chatRoomParticipants.userId })
+      .from(chatRoomParticipants)
+      .where(eq(chatRoomParticipants.chatRoomId, roomId));
+    for (const p of parts as Array<{ userId: number }>) userIds.add(p.userId);
+
+    const senders = await db
+      .select({ senderId: messages.senderId })
+      .from(messages)
+      .where(eq(messages.chatRoomId, roomId));
+    for (const s of senders as Array<{ senderId: number }>) {
+      if (s.senderId) userIds.add(s.senderId);
+    }
+
+    const roomTasks = await db
+      .select({
+        creatorId: tasks.creatorId,
+        assignedToId: tasks.assignedToId,
+      })
+      .from(tasks)
+      .where(eq(tasks.chatRoomId, roomId));
+    for (const t of roomTasks as Array<{ creatorId: number; assignedToId: number | null }>) {
+      if (t.creatorId) userIds.add(t.creatorId);
+      if (t.assignedToId) userIds.add(t.assignedToId);
+    }
+
+    // Validate users exist
+    for (const uid of Array.from(userIds)) {
+      const u = await getUserById(uid);
+      if (!u) {
+        userIds.delete(uid);
+        continue;
+      }
+      const before = await db
+        .select({ id: chatRoomParticipants.id })
+        .from(chatRoomParticipants)
+        .where(
+          and(eq(chatRoomParticipants.chatRoomId, roomId), eq(chatRoomParticipants.userId, uid))
+        )
+        .limit(1);
+      await ensureRoomMembership(roomId, uid, {
+        isAdmin: u.role === "admin" || uid === room.createdBy,
+      });
+      if (!before[0]) participantsAdded += 1;
+      membersMirrored += 1;
+    }
+  }
+
+  return { rooms: rooms.length, participantsAdded, membersMirrored };
 }
 
 export async function deleteChatRoom(chatRoomId: number) {
@@ -287,6 +479,13 @@ export async function deleteChatRoom(chatRoomId: number) {
   
   // Delete all participants in the room
   await db.delete(chatRoomParticipants).where(eq(chatRoomParticipants.chatRoomId, chatRoomId));
+
+  // Membership / invites (phase 0/1 tables)
+  try {
+    await db.delete(roomMembers).where(eq(roomMembers.chatRoomId, chatRoomId));
+  } catch {
+    // table might not exist on very old deploys
+  }
   
   // Delete all tasks in the room
   await db.delete(tasks).where(eq(tasks.chatRoomId, chatRoomId));
@@ -766,9 +965,20 @@ export async function removeParticipant(chatRoomId: number, userId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
-  return await db
+  // Remove membership only — never delete the user row or message/task history
+  await db
     .delete(chatRoomParticipants)
     .where(and(eq(chatRoomParticipants.chatRoomId, chatRoomId), eq(chatRoomParticipants.userId, userId)));
+
+  try {
+    await db
+      .delete(roomMembers)
+      .where(and(eq(roomMembers.chatRoomId, chatRoomId), eq(roomMembers.userId, userId)));
+  } catch {
+    // ignore if table missing
+  }
+
+  return { success: true as const, chatRoomId, userId };
 }
 
 
