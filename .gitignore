@@ -106,6 +106,12 @@ temp/
 *.sqlite
 *.sqlite3
 
+# Local DB backups / phase checkpoints (may contain production data — never commit)
+backups/
+export-data.json
+**/phase0-*.json
+**/tidb-backup-*.json
+
 # Webdev artifacts (checkpoint zips, migrations, etc.)
 .webdev/
 

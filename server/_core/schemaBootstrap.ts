@@ -32,6 +32,29 @@ export async function ensureProductionSchema(connection: Connection): Promise<vo
       UNIQUE KEY uq_message_user_emoji (messageId, userId, emoji),
       KEY idx_messageReactions_messageId (messageId)
     )`,
+    // Phase 0: membership/invite tables ready for Phase 1 (empty until backfill/logic)
+    `CREATE TABLE IF NOT EXISTS roomInvites (
+      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      chatRoomId INT NOT NULL,
+      inviteToken VARCHAR(64) NOT NULL,
+      createdBy INT NOT NULL,
+      createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      expiresAt TIMESTAMP NULL,
+      UNIQUE KEY uq_roomInvites_token (inviteToken),
+      KEY idx_roomInvites_chatRoomId (chatRoomId)
+    )`,
+    `CREATE TABLE IF NOT EXISTS roomMembers (
+      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      chatRoomId INT NOT NULL,
+      userId INT NOT NULL,
+      isAdmin TINYINT(1) NOT NULL DEFAULT 0,
+      status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+      joinedAt TIMESTAMP NULL,
+      createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_roomMembers_room_user (chatRoomId, userId),
+      KEY idx_roomMembers_userId (userId),
+      KEY idx_roomMembers_chatRoomId (chatRoomId)
+    )`,
   ];
 
   for (const sql of statements) {
