@@ -65,7 +65,7 @@ export default function AcceptInvite() {
       <Card className="w-full max-w-md p-6 shadow-md border-slate-200">
         <div className="mb-5">
           <p className="text-xs font-medium uppercase tracking-wide text-teal-700 mb-1">
-            Chat Task
+            ChaTask
           </p>
           <h1 className="text-xl font-semibold text-slate-900">{title}</h1>
           {preview?.valid && (
