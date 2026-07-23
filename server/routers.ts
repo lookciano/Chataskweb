@@ -58,9 +58,17 @@ export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
-    listIdentities: publicProcedure.query(async () => {
-      // Only existing DB people — preserves historical users/responsibles.
-      return await db.listSelectableUsers();
+    /**
+     * Identity list rules (multi-room safer model):
+     * - Platform admin session → full selectable list (may switch into any known person)
+     * - No session / non-admin → only platform admins (bootstrap login for Luciano/Teste)
+     * Regular members enter via room invite link, not this picker.
+     */
+    listIdentities: publicProcedure.query(async ({ ctx }) => {
+      if (ctx.user?.role === "admin") {
+        return await db.listSelectableUsers();
+      }
+      return await db.listPlatformAdmins();
     }),
     selectIdentity: publicProcedure
       .input(z.object({
@@ -72,10 +80,27 @@ export const appRouter = router({
           throw new TRPCError({ code: "NOT_FOUND", message: "Usuário não encontrado" });
         }
 
-        // Guard: only allow selecting known team identities (participants or named users)
-        const selectable = await db.listSelectableUsers();
-        if (!selectable.some((u) => u.id === user.id)) {
-          throw new TRPCError({ code: "FORBIDDEN", message: "Identidade não autorizada" });
+        const isCallerAdmin = ctx.user?.role === "admin";
+        if (isCallerAdmin) {
+          // Admin may switch to any known platform identity (support / ops)
+          const selectable = await db.listSelectableUsers();
+          if (!selectable.some((u) => u.id === user.id) && user.role !== "admin") {
+            throw new TRPCError({ code: "FORBIDDEN", message: "Identidade não autorizada" });
+          }
+        } else if (!ctx.user) {
+          // Cold start: only platform admins can bootstrap without an invite
+          if (user.role !== "admin") {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: "Acesso de membros é só por link de convite da sala",
+            });
+          }
+        } else {
+          // Logged-in non-admin cannot hop identities
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Troca de identidade disponível apenas para administradores",
+          });
         }
 
         const label = user.displayName || user.name || `User ${user.id}`;
@@ -266,20 +291,23 @@ export const appRouter = router({
       .input(z.object({
         token: z.string().min(8).max(128),
         displayName: z.string().min(1).max(255),
+        // Platform account is name+email; required for every new join via invite
         email: z
           .string()
-          .max(320)
-          .optional()
-          .transform((v) => (v && v.trim() ? v.trim() : undefined))
-          .pipe(z.string().email().optional()),
+          .trim()
+          .email("Informe um e-mail válido")
+          .max(320),
       }))
       .mutation(async ({ input, ctx }) => {
         try {
           const result = await db.acceptRoomInvite({
             token: input.token,
             displayName: input.displayName,
-            email: input.email || null,
-            existingUserId: ctx.user?.id ?? null,
+            email: input.email,
+            // If already admin-impersonating, still honor form identity for invite join
+            // unless they are joining with the same session as a non-admin member.
+            existingUserId:
+              ctx.user && ctx.user.role !== "admin" ? ctx.user.id : null,
           });
 
           const label =

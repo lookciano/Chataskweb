@@ -69,6 +69,7 @@ interface Participant {
 
 export default function ChatApp() {
   const { user, loading, identities, needsIdentity, selectIdentity, selecting, logout, isAuthenticated } = useAuth();
+  const isPlatformAdmin = user?.role === "admin";
   const { notifyNewMessage, setLastMessageCount } = useMessageNotifications();
   const [selectedRoom, setSelectedRoom] = useState<number | null>(null);
   const [messageInput, setMessageInput] = useState("");
@@ -1443,8 +1444,7 @@ export default function ChatApp() {
     );
   }
 
-  // Restore multi-user access without creating new people:
-  // each browser picks an EXISTING team identity from the database.
+  // Platform admins bootstrap here. Other members enter only via room invite link.
   if (needsIdentity || !isAuthenticated || !user) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-teal-50 flex items-center justify-center p-4">
@@ -1453,21 +1453,27 @@ export default function ChatApp() {
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-teal-100 text-teal-700">
               <Users className="h-6 w-6" />
             </div>
-            <h1 className="text-2xl font-semibold text-slate-900">Quem está usando?</h1>
+            <h1 className="text-2xl font-semibold text-slate-900">Acesso administrador</h1>
             <p className="mt-2 text-sm text-slate-600">
-              Selecione sua identidade existente. Mensagens, tarefas e responsáveis históricos
-              serão preservados para as mesmas pessoas.
+              Somente administradores da plataforma entram por esta tela.
+              Os demais membros usam o <span className="font-medium">link de convite</span> da sala.
             </p>
           </div>
 
           <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
             {identities.length === 0 ? (
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                Nenhum usuário encontrado na base. Verifique o <code>DATABASE_URL</code> no Render
-                e se a base TiDB ainda contém a tabela <code>users</code>.
+                Nenhum administrador disponível. Se você é membro de uma sala, abra o link de
+                convite que recebeu.
               </div>
             ) : (
-              identities.map((identity) => (
+              identities.map((identity: {
+                id: number;
+                displayName?: string | null;
+                name?: string | null;
+                email?: string | null;
+                role?: string | null;
+              }) => (
                 <button
                   key={identity.id}
                   type="button"
@@ -1485,6 +1491,7 @@ export default function ChatApp() {
                       </p>
                       <p className="truncate text-xs text-slate-500">
                         {identity.email || `ID ${identity.id}`}
+                        {identity.role === "admin" ? " · admin" : ""}
                       </p>
                     </div>
                   </div>
@@ -2286,18 +2293,33 @@ export default function ChatApp() {
                       Salvar
                     </Button>
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="border-slate-200 text-slate-700 hover:bg-slate-100"
-                    onClick={async () => {
-                      await logout();
-                      setShowProfileModal(false);
-                      toast.message("Selecione novamente quem está usando o app");
-                    }}
-                  >
-                    Trocar identidade
-                  </Button>
+                  {isPlatformAdmin ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="border-slate-200 text-slate-700 hover:bg-slate-100"
+                      onClick={async () => {
+                        await logout();
+                        setShowProfileModal(false);
+                        toast.message("Selecione a identidade (apenas administradores)");
+                      }}
+                    >
+                      Trocar identidade
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="border-slate-200 text-slate-700 hover:bg-slate-100"
+                      onClick={async () => {
+                        await logout();
+                        setShowProfileModal(false);
+                        toast.message("Sessão encerrada. Use o link de convite da sala para entrar de novo.");
+                      }}
+                    >
+                      Sair
+                    </Button>
+                  )}
                 </div>
               </div>
             </Card>
@@ -2983,18 +3005,33 @@ export default function ChatApp() {
                     Salvar
                   </Button>
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="border-slate-200 text-slate-700 hover:bg-slate-100"
-                  onClick={async () => {
-                    await logout();
-                    setShowProfileModal(false);
-                    toast.message("Selecione novamente quem está usando o app");
-                  }}
-                >
-                  Trocar identidade
-                </Button>
+                {isPlatformAdmin ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="border-slate-200 text-slate-700 hover:bg-slate-100"
+                    onClick={async () => {
+                      await logout();
+                      setShowProfileModal(false);
+                      toast.message("Selecione a identidade (apenas administradores)");
+                    }}
+                  >
+                    Trocar identidade
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="border-slate-200 text-slate-700 hover:bg-slate-100"
+                    onClick={async () => {
+                      await logout();
+                      setShowProfileModal(false);
+                      toast.message("Sessão encerrada. Use o link de convite da sala para entrar de novo.");
+                    }}
+                  >
+                    Sair
+                  </Button>
+                )}
               </div>
             </div>
           </Card>

@@ -163,6 +163,42 @@ function userLabel(user: User): string {
 }
 
 /**
+ * Platform admins only (bootstrap / identity switch gate for owners).
+ * Never fabricates users — filters existing account rows by role.
+ */
+export async function listPlatformAdmins() {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const rows = await db
+    .select({
+      id: users.id,
+      openId: users.openId,
+      name: users.name,
+      displayName: users.displayName,
+      email: users.email,
+      role: users.role,
+    })
+    .from(users)
+    .where(eq(users.role, "admin"));
+
+  return rows
+    .filter((u: any) => Boolean((u.displayName || u.name || "").trim()))
+    .sort((a: any, b: any) =>
+      (a.displayName || a.name || "").localeCompare(b.displayName || b.name || "", "pt-BR")
+    )
+    .map((u: any) => ({
+      id: u.id,
+      openId: u.openId,
+      name: u.name,
+      displayName: u.displayName || u.name || `User ${u.id}`,
+      email: u.email,
+      role: u.role,
+      label: (u.displayName || u.name || `User ${u.id}`).trim(),
+    }));
+}
+
+/**
  * Existing team members only — never fabricates new users.
  * Prefers chat participants + approved room members so invitees also appear
  * in the identity picker after accepting a link.
@@ -1149,20 +1185,22 @@ export async function createInvitedUser(params: {
   if (!displayName) throw new Error("Nome é obrigatório");
 
   const email = params.email?.trim().toLowerCase() || null;
-  if (email) {
-    const existing = await findUserByEmail(email);
-    if (existing) {
-      // Update display label if empty-ish, but keep the same user id
-      if (!existing.displayName) {
-        await db
-          .update(users)
-          .set({ displayName, updatedAt: new Date() })
-          .where(eq(users.id, existing.id));
-        const refreshed = await getUserById(existing.id);
-        if (refreshed) return refreshed;
-      }
-      return existing;
+  if (!email) {
+    throw new Error("E-mail é obrigatório para cadastro na plataforma");
+  }
+
+  const existing = await findUserByEmail(email);
+  if (existing) {
+    // Keep historical id; refresh display name if blank, never wipe other fields
+    if (!existing.displayName || existing.displayName.trim() === "") {
+      await db
+        .update(users)
+        .set({ displayName, updatedAt: new Date() })
+        .where(eq(users.id, existing.id));
+      const refreshed = await getUserById(existing.id);
+      if (refreshed) return refreshed;
     }
+    return existing;
   }
 
   const openId = `invite-${randomBytes(16).toString("hex")}`;
@@ -1181,7 +1219,6 @@ export async function createInvitedUser(params: {
 
   const insertId = Number((result as any)?.[0]?.insertId ?? (result as any)?.insertId ?? 0);
   if (!insertId) {
-    // fallback: lookup by openId
     const byOpen = await getUserByOpenId(openId);
     if (!byOpen) throw new Error("Falha ao criar usuário convidado");
     return byOpen;

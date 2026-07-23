@@ -56,6 +56,8 @@ export default function AcceptInvite() {
     Boolean(token) &&
     Boolean(preview?.valid) &&
     displayName.trim().length > 0 &&
+    email.trim().length > 3 &&
+    email.includes("@") &&
     !acceptMutation.isPending;
 
   return (
@@ -109,7 +111,7 @@ export default function AcceptInvite() {
 
         {preview?.valid && (
           <div className="space-y-4">
-            {user && (
+            {user && user.role !== "admin" && (
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
                 Você já está como{" "}
                 <span className="font-medium text-slate-900">
@@ -127,30 +129,37 @@ export default function AcceptInvite() {
                 onChange={(e) => setDisplayName(e.target.value)}
                 placeholder="Ex.: Maria Silva"
                 className="w-full"
-                disabled={Boolean(user)}
+                disabled={Boolean(user && user.role !== "admin")}
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                E-mail <span className="text-slate-400 font-normal">(opcional)</span>
+                E-mail da conta
               </label>
               <Input
                 type="email"
+                required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="nome@empresa.com"
                 className="w-full"
-                disabled={Boolean(user?.email)}
+                disabled={Boolean(user?.email && user.role !== "admin")}
               />
+              <p className="text-[11px] text-slate-500 mt-1">
+                Cadastro da plataforma: nome + e-mail. Se o e-mail já existir, reutilizamos a mesma conta.
+              </p>
             </div>
             <Button
               className="w-full bg-teal-600 hover:bg-teal-700 text-white shadow-none"
               disabled={!canSubmit}
               onClick={() => {
+                const cleanEmail = email.trim();
+                const cleanName = displayName.trim();
+                if (!token || !cleanEmail || !cleanName) return;
                 acceptMutation.mutate({
                   token,
-                  displayName: displayName.trim(),
-                  email: email.trim() || undefined,
+                  displayName: cleanName,
+                  email: cleanEmail,
                 });
               }}
             >
