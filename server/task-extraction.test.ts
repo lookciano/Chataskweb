@@ -72,7 +72,7 @@ describe("Task Extraction with Spelling Correction", () => {
     }
   });
 
-  it("should handle multiple tasks in one message", async () => {
+  it("should create at most one task per message (even if multiple actions listed)", async () => {
     const message = `
       1. Larissa precisa fazer a revisao do documento
       2. Sergio deve preparar a apresentacao para amanha
@@ -83,8 +83,11 @@ describe("Task Extraction with Spelling Correction", () => {
     
     expect(tasks).toBeDefined();
     expect(Array.isArray(tasks)).toBe(true);
-    // Should extract multiple tasks
-    expect(tasks.length).toBeGreaterThanOrEqual(1);
+    // One chat message => at most one task; description is the full message (corrected)
+    expect(tasks.length).toBeLessThanOrEqual(1);
+    if (tasks.length === 1) {
+      expect(tasks[0].description.length).toBeGreaterThan(40);
+    }
   });
 
   it("should disable spelling correction when flag is false", async () => {

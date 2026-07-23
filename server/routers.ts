@@ -260,40 +260,39 @@ export const appRouter = router({
           participantNames
         );
 
-        const createdTasks = [];
-        for (const task of extracted) {
-          if (task.isTask) {
-            let dueDate: Date | undefined = undefined;
-            if (task.dueDate) {
-              try {
-                const parsed = new Date(task.dueDate);
-                if (!isNaN(parsed.getTime())) {
-                  dueDate = parsed;
-                }
-              } catch (e) {
-                // Invalid date format, skip
-              }
+        // Safety: at most one task created per chat message
+        const task = extracted.find((t) => t.isTask) || extracted[0];
+        if (!task || task.isTask === false) {
+          return [];
+        }
+
+        let dueDate: Date | undefined = undefined;
+        if (task.dueDate) {
+          try {
+            const parsed = new Date(task.dueDate);
+            if (!isNaN(parsed.getTime())) {
+              dueDate = parsed;
             }
-            
-            const created = await db.createTask({
-              messageId: 0,
-              chatRoomId: input.chatRoomId,
-              creatorId: ctx.user.id,
-              assignedToId: undefined,
-              assignedToName: task.assignedTo || db.resolveUserDisplayName(ctx.user),
-              description: task.description,
-              dueDate: dueDate,
-              priority: task.priority,
-              status: "pending",
-              taskNumber: 0,
-            });
-            if (created) {
-              createdTasks.push(created);
-            }
+          } catch (e) {
+            // Invalid date format, skip
           }
         }
 
-        return createdTasks;
+        const created = await db.createTask({
+          messageId: 0,
+          chatRoomId: input.chatRoomId,
+          creatorId: ctx.user.id,
+          assignedToId: undefined,
+          assignedToName: task.assignedTo || db.resolveUserDisplayName(ctx.user),
+          // Full chat message (spell-corrected) becomes the task description
+          description: task.description,
+          dueDate: dueDate,
+          priority: task.priority,
+          status: "pending",
+          taskNumber: 0,
+        });
+
+        return created ? [created] : [];
       }),
     interpretResponse: protectedProcedure
       .input(z.object({

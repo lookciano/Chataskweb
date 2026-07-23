@@ -117,17 +117,25 @@ export async function extractTasksFromMessage(
   roomParticipants: string[] = []
 ): Promise<ExtractedTask[]> {
   try {
+    const originalMessage = (messageContent || "").trim();
+    if (!originalMessage) return [];
+
+    // Description policy: always the FULL chat message (with spelling fixes), never a LLM summary.
+    const fullCorrectedDescription = enableSpellingCorrection
+      ? await correctPortugueseSpellingWithLLM(originalMessage)
+      : correctPortugueseSpellingBasic(originalMessage);
+
     const response = await invokeLLM({
       messages: [
         {
           role: "system",
-          content: `You are a task extraction AI. Analyze the given message and extract any tasks or action items mentioned.
-          
-For each task found, return a JSON array with the following structure:
+          content: `You are a task extraction AI. Analyze ONE chat message and decide if it is a single actionable task.
+
+Return JSON:
 {
   "tasks": [
     {
-      "description": "What needs to be done",
+      "description": "ignored by server — leave any short placeholder",
       "assignedTo": "Name of person responsible (if mentioned)",
       "dueDate": "Due date if mentioned (e.g., 'tomorrow', 'next Friday', 'by end of week')",
       "priority": "low|medium|high based on context",
@@ -136,43 +144,31 @@ For each task found, return a JSON array with the following structure:
   ]
 }
 
-If no tasks are found, return: { "tasks": [] }
+If the message is NOT a task, return: { "tasks": [] }
+
+CRITICAL — ONE TASK PER MESSAGE:
+- Return at most ONE item in "tasks". Never split one message into multiple tasks.
+- Even if the message lists several actions, treat it as a single task for the whole message.
 
 CRITICAL RULES FOR TASK DETECTION:
-- DO NOT create tasks from QUESTIONS. If the message is a question (contains "?" especially at the end), set isTask to false. Questions are NOT tasks.
-- Examples of QUESTIONS (isTask: false): "Alguém pode enviar o relatório?", "Quando vai estar pronto?", "Você conseguiu fazer?", "Podemos marcar reunião?"
-- Examples of TASKS (isTask: true): "Preciso que envie o relatório até sexta", "Maria deve preparar a apresentação", "Fazer revisão do documento"
-- Only extract clear action items, requests, or commands - NOT questions or inquiries
+- DO NOT create tasks from QUESTIONS. If the message is a question (contains "?" especially at the end), set isTask to false / return empty tasks. Questions are NOT tasks.
+- Examples of QUESTIONS (not tasks): "Alguém pode enviar o relatório?", "Quando vai estar pronto?", "Você conseguiu fazer?", "Podemos marcar reunião?"
+- Examples of TASKS: "Preciso que envie o relatório até sexta", "Maria deve preparar a apresentação", "Victor, elaborar os desenhos de drenagem"
+- Only extract clear action items, requests, or commands - NOT questions, chit-chat, or status-only notes
 
 Guidelines:
-- Only extract clear action items or requests
 - Look for keywords like: need, should, must, please, can you, could you, by, until, deadline, etc.
-- Portuguese keywords: precisa, deve, tem que, por favor, pode, poderia, ate, prazo, entregar, fazer, enviar
+- Portuguese keywords: precisa, deve, tem que, por favor, pode, poderia, ate, prazo, entregar, fazer, enviar, elaborar
 - Infer priority from context (urgent, ASAP, URGENTE = high; normal = medium; nice to have = low)
-- Extract assigned person from mentions like "@name" or "for John" or "John needs to" or "John deve fazer"
-- Extract dates from natural language like "by Friday", "next week", "tomorrow", "by EOD", "ate sexta", "proxima semana"
-- IMPORTANT: Do NOT include # symbols in task descriptions. Remove any # from the beginning or middle of descriptions.
-- Format descriptions clearly without special prefixes like # or Task numbers
-
-CRITICAL RULES FOR TASK DESCRIPTIONS:
-- The description MUST be COMPLETE and DETAILED - never summarize or shorten the task description
-- Include ALL relevant information from the original message in the description
-- The description should capture the full context of what needs to be done, not just a brief summary
-- Example BAD (too short): "Enviar relatório"
-- Example GOOD (complete): "Enviar o relatório financeiro do mês de julho para o departamento de contabilidade até sexta-feira"
-- Preserve all details: what, when, where, who, how, and any specific requirements mentioned
-- Do NOT use vague or generic descriptions - be specific and thorough
-- The description should be self-contained - someone reading just the description should understand exactly what needs to be done
-- CRITICAL: Do NOT include the responsible person name in the task description. The person name should ONLY go in the assignedTo field, never inside the description text. Example: if message is "João needs to send the financial report by Friday", description should be "Send the financial report by Friday" (NOT "João needs to send the financial report by Friday"), and assignedTo should be "João"
-- Ensure descriptions are clear and actionable
-- Only set isTask to true if it's a clear action item, not a statement or question
-- CRITICAL: If no responsible person is clearly identified in the message, set assignedTo to the SENDER name (the person who sent the message). Every task MUST have a responsible person - never leave assignedTo empty or undefined. When in doubt about who is responsible, default to the sender.
-- The assignedTo field must ALWAYS have a value. If the message says "I need to do X" or "Need to finish Y" without mentioning another person, the sender is the responsible person.
-- CRITICAL: For assignedTo field, preserve the EXACT capitalization of person names as they appear in the message. Do NOT convert names to lowercase. Examples: \"John\", \"Maria\", \"Sergio\", not \"john\", \"maria\", \"sergio\"`,
+- Extract assigned person from mentions like "@name", "Name, ..." at the start, "for John", "John precisa", "John deve fazer"
+- Extract dates from natural language like "by Friday", "tomorrow", "ate sexta", "proxima semana"
+- The server will REPLACE description with the full original message (spell-corrected). You may put a short placeholder in description.
+- CRITICAL: If no responsible person is clearly identified, set assignedTo to the SENDER name. Every task must have assignedTo when isTask is true.
+- CRITICAL: For assignedTo, preserve EXACT capitalization of person names as they appear. Do NOT convert names to lowercase.`,
         },
         {
           role: "user",
-          content: `Extract tasks from this message:\n\n"${messageContent}"\n\nSender: ${senderName}`,
+          content: `Analyze this single message (at most one task):\n\n"${originalMessage}"\n\nSender: ${senderName}`,
         },
       ],
       response_format: {
@@ -220,49 +216,38 @@ CRITICAL RULES FOR TASK DESCRIPTIONS:
     }
 
     const parsed = JSON.parse(jsonContent);
-    const tasks = parsed.tasks || [];
-    console.log("[LLM_EXTRACTION] Raw LLM response:", { messageContent, tasks });
-    
-    // Aplicar mapeamento de participantes PRIMEIRO, depois correção ortográfica
-    if (enableSpellingCorrection || roomParticipants.length > 0) {
-      return await Promise.all(
-        tasks.map(async (task: ExtractedTask) => {
-          let correctedDescription = task.description;
-          let mappedAssignedTo = task.assignedTo;
-          
-          // PASSO 1: Mapear nome mencionado para nome real do participante ANTES de qualquer correção
-          // Nomes de pessoas NAO devem ser corrigidos ortograficamente
-          console.log("[TASK_EXTRACTOR] Processing task:", { description: task.description, assignedTo: task.assignedTo, roomParticipantsCount: roomParticipants.length });
-          if (mappedAssignedTo && roomParticipants.length > 0) {
-            console.log("[TASK_EXTRACTOR] Attempting to match:", { mappedAssignedTo, roomParticipants });
-            const bestMatch = await findBestParticipantMatch(mappedAssignedTo, roomParticipants);
-            console.log("[TASK_EXTRACTOR] Match result:", { mappedAssignedTo, bestMatch });
-            if (bestMatch) {
-              mappedAssignedTo = bestMatch; // Use o nome exato da lista de participantes
-            } else {
-              // Se nao encontrar match, deixar como undefined para que seja tratado depois
-              mappedAssignedTo = undefined;
-            }
-          } else {
-            console.log("[TASK_EXTRACTOR] No assigned person or no participants", { mappedAssignedTo, participantsLength: roomParticipants.length });
-          }
-          
-          // PASSO 2: Corrigir ortografia APENAS da descricao, nunca do nome
-          if (enableSpellingCorrection) {
-            correctedDescription = await correctPortugueseSpellingWithLLM(task.description);
-            // NAO corrigir o nome do responsavel - ele ja foi mapeado para o nome exato
-          }
-          
-          return {
-            ...task,
-            description: correctedDescription,
-            assignedTo: mappedAssignedTo,
-          };
-        })
-      );
+    const tasks = (parsed.tasks || []) as ExtractedTask[];
+    console.log("[LLM_EXTRACTION] Raw LLM response:", { messageContent: originalMessage, tasks });
+
+    // Hard limit: never more than one task per chat message
+    const candidate = tasks.find((t) => t && t.isTask) || tasks[0];
+    if (!candidate || candidate.isTask === false) {
+      return [];
     }
-    
-    return tasks;
+
+    let mappedAssignedTo = candidate.assignedTo;
+    if (mappedAssignedTo && roomParticipants.length > 0) {
+      console.log("[TASK_EXTRACTOR] Attempting to match:", { mappedAssignedTo, roomParticipants });
+      const bestMatch = await findBestParticipantMatch(mappedAssignedTo, roomParticipants);
+      console.log("[TASK_EXTRACTOR] Match result:", { mappedAssignedTo, bestMatch });
+      mappedAssignedTo = bestMatch || undefined;
+    }
+
+    const singleTask: ExtractedTask = {
+      ...candidate,
+      isTask: true,
+      // Always store 100% of the (corrected) chat message as the task description
+      description: fullCorrectedDescription || originalMessage,
+      assignedTo: mappedAssignedTo || candidate.assignedTo || senderName,
+      priority: candidate.priority || "medium",
+    };
+
+    console.log("[TASK_EXTRACTOR] Final single task:", {
+      descriptionLength: singleTask.description.length,
+      assignedTo: singleTask.assignedTo,
+    });
+
+    return [singleTask];
   } catch (error) {
     console.error("Error extracting tasks from message:", error);
     return [];
