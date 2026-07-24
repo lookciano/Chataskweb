@@ -825,10 +825,21 @@ export const appRouter = router({
     updateDescription: protectedProcedure
       .input(z.object({
         taskId: z.number(),
-        description: z.string().min(1).max(2000, "Descrição muito longa"),
+        // Full chat-message descriptions can be long — keep generous but bounded
+        description: z.string().min(1).max(8000, "Descrição muito longa"),
       }))
-      .mutation(async ({ input }) => {
-        return await db.updateTaskDescription(input.taskId, input.description);
+      .mutation(async ({ input, ctx }) => {
+        const task = await db.getTaskById(input.taskId);
+        if (!task) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Tarefa não encontrada" });
+        }
+        await assertRoomAccess(ctx, task.chatRoomId);
+        const description = input.description.trim();
+        if (!description) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Descrição não pode ficar vazia" });
+        }
+        await db.updateTaskDescription(input.taskId, description);
+        return { success: true as const, taskId: input.taskId, description };
       }),
   }),
 

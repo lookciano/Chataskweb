@@ -250,14 +250,19 @@ export default function ChatApp() {
     },
   });
   const updateDescriptionMutation = trpc.tasks.updateDescription.useMutation({
-    onSuccess: async (_, variables) => {
+    onSuccess: async (result, variables) => {
+      const nextDesc = (result as any)?.description ?? variables.description;
+      setTasks((prev) =>
+        prev.map((t) => (t.id === variables.taskId ? { ...t, description: nextDesc } : t))
+      );
       const task = tasks.find((t) => t.id === variables.taskId);
       await utils.tasks.list.invalidate();
-      toast.success(`Tarefa ${task?.taskNumber} atualizada`, {
-        description: "Descricao editada com sucesso",
-        duration: 3000,
+      toast.success(`Tarefa ${task?.taskNumber ?? ""} atualizada`.trim(), {
+        description: "Descrição editada com sucesso",
+        duration: 2500,
       });
       setEditingTaskId(null);
+      setEditingDescription("");
     },
     onError: (error) => {
       toast.error("Erro ao atualizar tarefa", {
@@ -1096,6 +1101,25 @@ export default function ChatApp() {
     </DropdownMenu>
   );
 
+  const startEditTask = (task: Task) => {
+    setEditingTaskId(task.id);
+    setEditingDescription(task.description || "");
+  };
+
+  const cancelEditTask = () => {
+    setEditingTaskId(null);
+    setEditingDescription("");
+  };
+
+  const saveEditTask = async (taskId: number) => {
+    const description = editingDescription.trim();
+    if (!description) {
+      toast.error("A descrição não pode ficar vazia");
+      return;
+    }
+    await updateDescriptionMutation.mutateAsync({ taskId, description });
+  };
+
   const taskActionsMenu = (task: Task, opts?: { withEdit?: boolean }) => (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -1114,12 +1138,11 @@ export default function ChatApp() {
           <DropdownMenuItem
             onClick={(e) => {
               e.stopPropagation();
-              setEditingTaskId(task.id);
-              setEditingDescription(task.description);
+              startEditTask(task);
             }}
           >
             <Edit2 className="w-4 h-4" />
-            Editar
+            Editar descrição
           </DropdownMenuItem>
         )}
         <DropdownMenuItem
@@ -1137,6 +1160,67 @@ export default function ChatApp() {
       </DropdownMenuContent>
     </DropdownMenu>
   );
+
+  /** Inline editor used by mobile + desktop task cards */
+  const renderTaskDescription = (task: Task, opts?: { strikethrough?: boolean }) => {
+    if (editingTaskId === task.id) {
+      return (
+        <div className="w-full space-y-2" onClick={(e) => e.stopPropagation()}>
+          <p className="text-xs font-semibold text-teal-700">Tarefa {task.taskNumber}</p>
+          <Textarea
+            value={editingDescription}
+            onChange={(e) => setEditingDescription(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                cancelEditTask();
+              }
+              // Cmd/Ctrl+Enter saves (Enter alone may be newline in textarea)
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                void saveEditTask(task.id);
+              }
+            }}
+            className="min-h-[5.5rem] max-h-48 text-sm resize-y border-teal-400 focus-visible:ring-teal-500"
+            autoFocus
+            disabled={updateDescriptionMutation.isPending}
+          />
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              className="h-8 bg-teal-600 hover:bg-teal-700 text-white shadow-none"
+              disabled={updateDescriptionMutation.isPending || !editingDescription.trim()}
+              onClick={() => void saveEditTask(task.id)}
+            >
+              {updateDescriptionMutation.isPending ? "Salvando…" : "Salvar"}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 border-slate-200 text-slate-700"
+              disabled={updateDescriptionMutation.isPending}
+              onClick={cancelEditTask}
+            >
+              Cancelar
+            </Button>
+          </div>
+          <p className="text-[10px] text-slate-400">Ctrl/Cmd+Enter para salvar · Esc para cancelar</p>
+        </div>
+      );
+    }
+
+    return (
+      <p
+        className={`text-sm font-medium text-slate-900 break-words whitespace-pre-wrap ${
+          opts?.strikethrough ? "line-through" : ""
+        }`}
+      >
+        <span className="font-bold text-teal-600">Tarefa {task.taskNumber}:</span> {task.description}
+      </p>
+    );
+  };
 
   const identityChip = (
     <button
@@ -1760,28 +1844,8 @@ export default function ChatApp() {
                               {/* Task Content */}
                               <div className="flex items-start justify-between gap-2">
                                 <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 mb-1 group min-w-0">
-                                    {editingTaskId === task.id ? (
-                                      <input
-                                        type="text"
-                                        value={editingDescription}
-                                        onChange={(e) => setEditingDescription(e.target.value)}
-                                        onKeyDown={(e) => {
-                                          if (e.key === "Enter") {
-                                            updateDescriptionMutation.mutateAsync({
-                                              taskId: task.id,
-                                              description: editingDescription,
-                                            });
-                                          } else if (e.key === "Escape") {
-                                            setEditingTaskId(null);
-                                          }
-                                        }}
-                                        className="flex-1 text-sm font-medium px-2 py-1 border border-teal-400 rounded focus:outline-none focus:ring-2 focus:ring-teal-500"
-                                        autoFocus
-                                      />
-                                    ) : (
-                                      <p className="text-sm font-medium text-slate-900"><span className="font-bold text-teal-600">Tarefa {task.taskNumber}:</span> {task.description}</p>
-                                    )}
+                                  <div className="mb-1 min-w-0">
+                                    {renderTaskDescription(task)}
                                   </div>
                                   <div className="flex flex-col gap-0.5">
                                     {task.assignedToName && (
@@ -2826,9 +2890,9 @@ export default function ChatApp() {
                           {getStatusIcon(task.status)}
                         </button>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-slate-900 break-words">
-                            <span className="font-bold text-teal-600">Tarefa {task.taskNumber}:</span> {task.description}
-                          </p>
+                          <div className="min-w-0">
+                            {renderTaskDescription(task)}
+                          </div>
                           {task.assignedToName && (
                             <p className="text-xs text-slate-600 mt-1">
                               👤 {task.assignedToName}
