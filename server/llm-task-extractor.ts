@@ -1,5 +1,5 @@
 import { invokeLLM } from "./_core/llm";
-import { findBestParticipantMatch } from "./participant-name-matcher";
+import { resolveTaskAssignee } from "./assignee-from-message";
 
 // Dicionário de correções ortográficas comuns em português do Brasil
 const PORTUGUESE_CORRECTIONS: Record<string, string> = {
@@ -125,6 +125,13 @@ export async function extractTasksFromMessage(
       ? await correctPortugueseSpellingWithLLM(originalMessage)
       : correctPortugueseSpellingBasic(originalMessage);
 
+    const rosterText = roomParticipants.length
+      ? roomParticipants.join(" | ")
+      : "(no roster)";
+    const rosterCsv = roomParticipants.length
+      ? roomParticipants.join(", ")
+      : "(none)";
+
     const response = await invokeLLM({
       messages: [
         {
@@ -156,19 +163,25 @@ CRITICAL RULES FOR TASK DETECTION:
 - Examples of TASKS: "Preciso que envie o relatório até sexta", "Maria deve preparar a apresentação", "Victor, elaborar os desenhos de drenagem"
 - Only extract clear action items, requests, or commands - NOT questions, chit-chat, or status-only notes
 
+ASSIGNEE RULES (very important):
+- Prefer names at START of message: "Victor, ...", "Victor:", "@Victor ...", "Victor precisa ...", "Victor deve ..."
+- Also: "para Victor ...", "Victor tem que ..."
+- When a person is named that way, assignedTo MUST be that person — NEVER the sender just because they wrote the message.
+- If someone addresses another participant, that other participant is the assignee.
+- Only use the SENDER as assignedTo when NO other person is clearly the owner of the action.
+- Prefer exact names from this room roster when possible: ${rosterText}
+- Preserve capitalization of names; do not lowercase them.
+
 Guidelines:
 - Look for keywords like: need, should, must, please, can you, could you, by, until, deadline, etc.
 - Portuguese keywords: precisa, deve, tem que, por favor, pode, poderia, ate, prazo, entregar, fazer, enviar, elaborar
 - Infer priority from context (urgent, ASAP, URGENTE = high; normal = medium; nice to have = low)
-- Extract assigned person from mentions like "@name", "Name, ..." at the start, "for John", "John precisa", "John deve fazer"
 - Extract dates from natural language like "by Friday", "tomorrow", "ate sexta", "proxima semana"
-- The server will REPLACE description with the full original message (spell-corrected). You may put a short placeholder in description.
-- CRITICAL: If no responsible person is clearly identified, set assignedTo to the SENDER name. Every task must have assignedTo when isTask is true.
-- CRITICAL: For assignedTo, preserve EXACT capitalization of person names as they appear. Do NOT convert names to lowercase.`,
+- The server will REPLACE description with the full original message (spell-corrected). You may put a short placeholder in description.`,
         },
         {
           role: "user",
-          content: `Analyze this single message (at most one task):\n\n"${originalMessage}"\n\nSender: ${senderName}`,
+          content: `Analyze this single message (at most one task):\n\n"${originalMessage}"\n\nSender (only the author of the chat bubble — not automatically the assignee): ${senderName}\nRoom participants: ${rosterCsv}`,
         },
       ],
       response_format: {
@@ -205,10 +218,10 @@ Guidelines:
     if (!content) return [];
 
     let jsonContent: string;
-    if (typeof content === 'string') {
+    if (typeof content === "string") {
       jsonContent = content;
     } else if (Array.isArray(content)) {
-      const textItem = (content as any[]).find((c: any) => c.type === 'text') as any;
+      const textItem = (content as any[]).find((c: any) => c.type === "text") as any;
       if (!textItem || !textItem.text) return [];
       jsonContent = textItem.text;
     } else {
@@ -225,26 +238,28 @@ Guidelines:
       return [];
     }
 
-    let mappedAssignedTo = candidate.assignedTo;
-    if (mappedAssignedTo && roomParticipants.length > 0) {
-      console.log("[TASK_EXTRACTOR] Attempting to match:", { mappedAssignedTo, roomParticipants });
-      const bestMatch = await findBestParticipantMatch(mappedAssignedTo, roomParticipants);
-      console.log("[TASK_EXTRACTOR] Match result:", { mappedAssignedTo, bestMatch });
-      mappedAssignedTo = bestMatch || undefined;
-    }
+    // LOCAL patterns beat LLM (Victor, @Larissa, Sérgio precisa...)
+    const resolved = await resolveTaskAssignee({
+      messageContent: originalMessage,
+      llmAssignedTo: candidate.assignedTo,
+      senderName,
+      roomParticipants,
+    });
+    console.log("[TASK_EXTRACTOR] Assignee resolved:", resolved);
 
     const singleTask: ExtractedTask = {
       ...candidate,
       isTask: true,
       // Always store 100% of the (corrected) chat message as the task description
       description: fullCorrectedDescription || originalMessage,
-      assignedTo: mappedAssignedTo || candidate.assignedTo || senderName,
+      assignedTo: resolved.assignedTo || senderName,
       priority: candidate.priority || "medium",
     };
 
     console.log("[TASK_EXTRACTOR] Final single task:", {
       descriptionLength: singleTask.description.length,
       assignedTo: singleTask.assignedTo,
+      assigneeSource: resolved.source,
     });
 
     return [singleTask];

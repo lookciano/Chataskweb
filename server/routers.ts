@@ -541,12 +541,19 @@ export const appRouter = router({
           }
         }
 
+        const assigneeName =
+          (task.assignedTo || "").trim() || db.resolveUserDisplayName(ctx.user);
+        // Bind historical person id when possible (same name → same user row)
+        const matchedUser = await db.findUserByIdentityName(assigneeName);
+
         const created = await db.createTask({
           messageId: 0,
           chatRoomId: input.chatRoomId,
           creatorId: ctx.user.id,
-          assignedToId: undefined,
-          assignedToName: task.assignedTo || db.resolveUserDisplayName(ctx.user),
+          assignedToId: matchedUser?.id,
+          assignedToName: matchedUser
+            ? (matchedUser.displayName || matchedUser.name || assigneeName)
+            : assigneeName,
           // Full chat message (spell-corrected) becomes the task description
           description: task.description,
           dueDate: dueDate,
