@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  cleanTaskDescription,
   detectAssigneeFromMessageLocal,
   findBestParticipantMatchLocalOnly,
   resolveTaskAssignee,
@@ -42,6 +43,32 @@ describe("local assignee detection (no LLM)", () => {
     expect(hit?.matchedParticipant).toBe("Sérgio Amorim");
   });
 
+  it("matches explicit 'atribuir a Victor ...'", async () => {
+    const hit = await detectAssigneeFromMessageLocal(
+      "Atribuir a Victor a revisão do projeto de aterramento",
+      ROSTER
+    );
+    expect(hit?.matchedParticipant).toBe("Victor Soares");
+    expect(hit?.source).toBe("assign_phrase");
+  });
+
+  it("matches 'fica com Larissa ...'", async () => {
+    const hit = await detectAssigneeFromMessageLocal(
+      "Fica com Larissa atualizar o cronograma de TAFs",
+      ROSTER
+    );
+    expect(hit?.matchedParticipant).toBe("Larissa Cortez");
+    expect(hit?.source).toBe("assign_phrase");
+  });
+
+  it("matches 'passar para Luan ...'", async () => {
+    const hit = await detectAssigneeFromMessageLocal(
+      "Passar para Luan o acompanhamento da elevação 3",
+      ROSTER
+    );
+    expect(hit?.matchedParticipant).toBe("Luan Silva");
+  });
+
   it("matches first name Fabian", async () => {
     expect(findBestParticipantMatchLocalOnly("Fabian", ROSTER)).toBe("Fabian Robert");
   });
@@ -49,7 +76,7 @@ describe("local assignee detection (no LLM)", () => {
   it("local pattern wins over wrong LLM/sender", async () => {
     const resolved = await resolveTaskAssignee({
       messageContent: "Victor, faça a revisão do projeto de aterramento",
-      llmAssignedTo: "Teste", // model wrongly used sender-like name
+      llmAssignedTo: "Teste",
       senderName: "Teste",
       roomParticipants: ROSTER,
     });
@@ -75,7 +102,57 @@ describe("local assignee detection (no LLM)", () => {
       senderName: "Luciano",
       roomParticipants: ROSTER,
     });
-    // May be llm_local_mapped if partial map works
     expect(resolved.assignedTo).toBe("Luan Silva");
+  });
+});
+
+describe("cleanTaskDescription (no assignee name in description)", () => {
+  it("strips 'Victor, ' lead-in", () => {
+    const d = cleanTaskDescription(
+      "Victor, elaborar os desenhos de drenagem da SE",
+      "Victor Soares",
+      ROSTER
+    );
+    expect(d.toLowerCase()).not.toContain("victor");
+    expect(d.toLowerCase()).toContain("elaborar");
+  });
+
+  it("strips '@Larissa favor '", () => {
+    const d = cleanTaskDescription(
+      "@Larissa favor revisar o memorial de cálculo",
+      "Larissa Cortez",
+      ROSTER
+    );
+    expect(d.toLowerCase()).not.toContain("larissa");
+    expect(d.toLowerCase()).toContain("revisar");
+  });
+
+  it("strips 'Atribuir a Victor '", () => {
+    const d = cleanTaskDescription(
+      "Atribuir a Victor a revisão do projeto de aterramento",
+      "Victor Soares",
+      ROSTER
+    );
+    expect(d.toLowerCase()).not.toContain("victor");
+    expect(d.toLowerCase()).toContain("revisão");
+  });
+
+  it("strips 'Fica com Fabian '", () => {
+    const d = cleanTaskDescription(
+      "Fica com Fabian atualizar a planilha de pendências",
+      "Fabian Robert",
+      ROSTER
+    );
+    expect(d.toLowerCase()).not.toContain("fabian");
+    expect(d.toLowerCase()).toContain("atualizar");
+  });
+
+  it("keeps work text when no name prefix", () => {
+    const d = cleanTaskDescription(
+      "Atualizar a planilha de pendências ainda hoje",
+      "Luciano",
+      ROSTER
+    );
+    expect(d.toLowerCase()).toContain("atualizar a planilha");
   });
 });

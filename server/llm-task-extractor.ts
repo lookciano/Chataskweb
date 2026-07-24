@@ -1,5 +1,5 @@
 import { invokeLLM } from "./_core/llm";
-import { resolveTaskAssignee } from "./assignee-from-message";
+import { cleanTaskDescription, resolveTaskAssignee } from "./assignee-from-message";
 
 // Dicionário de correções ortográficas comuns em português do Brasil
 const PORTUGUESE_CORRECTIONS: Record<string, string> = {
@@ -120,8 +120,8 @@ export async function extractTasksFromMessage(
     const originalMessage = (messageContent || "").trim();
     if (!originalMessage) return [];
 
-    // Description policy: always the FULL chat message (with spelling fixes), never a LLM summary.
-    const fullCorrectedDescription = enableSpellingCorrection
+    // Spelling fix on the raw chat text; assignee lead-ins are stripped later for the stored description.
+    const fullCorrectedMessage = enableSpellingCorrection
       ? await correctPortugueseSpellingWithLLM(originalMessage)
       : correctPortugueseSpellingBasic(originalMessage);
 
@@ -136,14 +136,14 @@ export async function extractTasksFromMessage(
       messages: [
         {
           role: "system",
-          content: `You are a task extraction AI. Analyze ONE chat message and decide if it is a single actionable task.
+          content: `You are a task extraction AI for a Portuguese team chat. Analyze ONE message and decide if it is a single actionable task / assignment.
 
 Return JSON:
 {
   "tasks": [
     {
-      "description": "ignored by server — leave any short placeholder",
-      "assignedTo": "Name of person responsible (if mentioned)",
+      "description": "ONLY the requested work — do NOT include the responsible person's name, @mention, or phrases like 'atribuir a X'. Example: message 'Victor, elaborar desenhos' → description 'Elaborar desenhos'.",
+      "assignedTo": "Name of person responsible (must match room roster when possible)",
       "dueDate": "Due date if mentioned (e.g., 'tomorrow', 'next Friday', 'by end of week')",
       "priority": "low|medium|high based on context",
       "isTask": true
@@ -158,30 +158,48 @@ CRITICAL — ONE TASK PER MESSAGE:
 - Even if the message lists several actions, treat it as a single task for the whole message.
 
 CRITICAL RULES FOR TASK DETECTION:
-- DO NOT create tasks from QUESTIONS. If the message is a question (contains "?" especially at the end), set isTask to false / return empty tasks. Questions are NOT tasks.
-- Examples of QUESTIONS (not tasks): "Alguém pode enviar o relatório?", "Quando vai estar pronto?", "Você conseguiu fazer?", "Podemos marcar reunião?"
-- Examples of TASKS: "Preciso que envie o relatório até sexta", "Maria deve preparar a apresentação", "Victor, elaborar os desenhos de drenagem"
-- Only extract clear action items, requests, or commands - NOT questions, chit-chat, or status-only notes
+- DO NOT create tasks from pure QUESTIONS (message that only asks something and ends with "?"). Return empty tasks.
+- DO create a task when someone ASSIGNS or REQUESTS work, even if phrased conversationally.
+- Examples that ARE tasks / assignments:
+  - "Victor, elaborar os desenhos de drenagem"
+  - "@Larissa favor revisar o memorial"
+  - "Sérgio precisa enviar o cronograma"
+  - "Atribuir a Victor a revisão do aterramento"
+  - "Fica com Fabian atualizar a planilha"
+  - "Passar para Luan o acompanhamento da TAF"
+  - "Responsável: Larissa — gerar a lista LDC"
+  - "Preciso que envie o relatório até sexta"
+- Examples that are NOT tasks: "Alguém pode enviar o relatório?", "Quando vai estar pronto?", "Bom dia pessoal", "ok", status-only small talk
+- Only skip pure questions / chit-chat / status notes without a clear work item
 
 ASSIGNEE RULES (very important):
-- Prefer names at START of message: "Victor, ...", "Victor:", "@Victor ...", "Victor precisa ...", "Victor deve ..."
-- Also: "para Victor ...", "Victor tem que ..."
+- Prefer names at START: "Victor, ...", "Victor:", "@Victor ...", "Victor precisa ...", "Victor deve ..."
+- Also verbal assignment phrases in Portuguese:
+  - "atribuir a Victor ...", "atribuído ao Sérgio ..."
+  - "fica com Larissa ...", "deixar com Fabian ..."
+  - "passar / encaminhar / pedir para Luan ..."
+  - "tarefa para Victor ...", "responsável: Sérgio"
+  - "para Victor: ..."
 - When a person is named that way, assignedTo MUST be that person — NEVER the sender just because they wrote the message.
 - If someone addresses another participant, that other participant is the assignee.
 - Only use the SENDER as assignedTo when NO other person is clearly the owner of the action.
 - Prefer exact names from this room roster when possible: ${rosterText}
 - Preserve capitalization of names; do not lowercase them.
 
+DESCRIPTION RULES:
+- description = the requested work only (action + object + context/dates still OK)
+- NEVER put the assignee name, @handle, or "atribuir a X" / "fica com X" wrappers into description
+- Keep important details of the request; do not invent extra work
+- Server will further strip residual name prefixes; still try to return clean work text
+
 Guidelines:
-- Look for keywords like: need, should, must, please, can you, could you, by, until, deadline, etc.
-- Portuguese keywords: precisa, deve, tem que, por favor, pode, poderia, ate, prazo, entregar, fazer, enviar, elaborar
+- Action keywords PT: precisa, deve, tem que, por favor, pode, elaborar, enviar, revisar, atualizar, preparar, verificar, atribuir, fica com, passar para, responsável
 - Infer priority from context (urgent, ASAP, URGENTE = high; normal = medium; nice to have = low)
-- Extract dates from natural language like "by Friday", "tomorrow", "ate sexta", "proxima semana"
-- The server will REPLACE description with the full original message (spell-corrected). You may put a short placeholder in description.`,
+- Extract dates from natural language like "by Friday", "tomorrow", "ate sexta", "proxima semana"`,
         },
         {
           role: "user",
-          content: `Analyze this single message (at most one task):\n\n"${originalMessage}"\n\nSender (only the author of the chat bubble — not automatically the assignee): ${senderName}\nRoom participants: ${rosterCsv}`,
+          content: `Analyze this single message (at most one task):\n\n"${originalMessage}"\n\nSender (author of the bubble — not automatically the assignee): ${senderName}\nRoom participants: ${rosterCsv}`,
         },
       ],
       response_format: {
@@ -238,7 +256,7 @@ Guidelines:
       return [];
     }
 
-    // LOCAL patterns beat LLM (Victor, @Larissa, Sérgio precisa...)
+    // LOCAL patterns beat LLM (Victor, @Larissa, atribuir a Sérgio...)
     const resolved = await resolveTaskAssignee({
       messageContent: originalMessage,
       llmAssignedTo: candidate.assignedTo,
@@ -247,17 +265,33 @@ Guidelines:
     });
     console.log("[TASK_EXTRACTOR] Assignee resolved:", resolved);
 
+    // Prefer LLM short work description when present; always strip assignee wrappers.
+    // Fall back to spell-corrected full message if LLM left placeholder/empty.
+    const llmDesc = (candidate.description || "").trim();
+    const baseDescription =
+      llmDesc &&
+      llmDesc.length >= 3 &&
+      !/^(ignored|placeholder|n\/a|task|tarefa)$/i.test(llmDesc)
+        ? llmDesc
+        : fullCorrectedMessage || originalMessage;
+
+    const cleanedDescription = cleanTaskDescription(
+      baseDescription,
+      resolved.assignedTo || senderName,
+      roomParticipants
+    );
+
     const singleTask: ExtractedTask = {
       ...candidate,
       isTask: true,
-      // Always store 100% of the (corrected) chat message as the task description
-      description: fullCorrectedDescription || originalMessage,
+      description: cleanedDescription,
       assignedTo: resolved.assignedTo || senderName,
       priority: candidate.priority || "medium",
     };
 
     console.log("[TASK_EXTRACTOR] Final single task:", {
       descriptionLength: singleTask.description.length,
+      description: singleTask.description,
       assignedTo: singleTask.assignedTo,
       assigneeSource: resolved.source,
     });
