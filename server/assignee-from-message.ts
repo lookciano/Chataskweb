@@ -357,53 +357,52 @@ export function cleanTaskDescription(
     );
   }
 
-  // Strip generic assignment phrasing that points to a person (keep the task part)
-  // "Atribuir a Victor a revisão..." → "a revisão..."
-  text = text.replace(
-    new RegExp(
-      `^(?:por\\s+favor[,,]?\\s*)?(?:atribuir|atribua|atribui|atribuindo|atribuido|atribuído|atribuida|atribuída)\\s+(?:a|ao|à|para|pro|pra)\\s+(?:o\\s+|a\\s+)?${NAME_1_TO_3}\\s*[,:]?\\s*`,
-      "i"
-    ),
-    ""
-  );
-  text = text.replace(
-    new RegExp(
-      `^(?:responsavel|responsável)\\s*(?::|é|eh|e)?\\s*(?:o\\s+|a\\s+)?${NAME_1_TO_3}\\s*[,:]?\\s*`,
-      "i"
-    ),
-    ""
-  );
-  text = text.replace(
-    new RegExp(
-      `^(?:fica|ficar|fique|deixar|deixa|deixe)\\s+com\\s+(?:o\\s+|a\\s+)?${NAME_1_TO_3}\\s*[,:]?\\s*`,
-      "i"
-    ),
-    ""
-  );
-  text = text.replace(
-    new RegExp(
-      `^(?:passar|passe|encaminhar|encaminhe|pedir|peço|peco|pedido|delegar|delegue)\\s+(?:a|ao|à|para|pro|pra)\\s+(?:o\\s+|a\\s+)?${NAME_1_TO_3}\\s*[,:]?\\s*`,
-      "i"
-    ),
-    ""
-  );
-  text = text.replace(
-    new RegExp(
-      `^(?:tarefa|atividade)\\s+(?:para|pro|pra)\\s+(?:o\\s+|a\\s+)?${NAME_1_TO_3}\\s*[,:]?\\s*`,
-      "i"
-    ),
-    ""
-  );
-
-  // "para Victor, ..." or leading "para Victor "
+  // Strip generic assignment phrasing — only against known names when available
+  // so "Atribuir a Victor a revisão..." keeps "a revisão..." (never eats work words as a name).
   if (nameAlts.length) {
     const nameGroup = `(?:${nameAlts.join("|")})`;
+
+    text = text.replace(
+      new RegExp(
+        `^(?:por\\s+favor[,:]?\\s*)?(?:atribuir|atribua|atribui|atribuindo|atribuido|atribuído|atribuida|atribuída)\\s+(?:a|ao|à|para|pro|pra)\\s+(?:o\\s+|a\\s+)?${nameGroup}\\s*[,:]?\\s*`,
+        "i"
+      ),
+      ""
+    );
+    text = text.replace(
+      new RegExp(
+        `^(?:responsavel|responsável)\\s*(?::|é|eh|e)?\\s*(?:o\\s+|a\\s+)?${nameGroup}\\s*[,:]?\\s*`,
+        "i"
+      ),
+      ""
+    );
+    text = text.replace(
+      new RegExp(
+        `^(?:fica|ficar|fique|deixar|deixa|deixe)\\s+com\\s+(?:o\\s+|a\\s+)?${nameGroup}\\s*[,:]?\\s*`,
+        "i"
+      ),
+      ""
+    );
+    text = text.replace(
+      new RegExp(
+        `^(?:passar|passe|encaminhar|encaminhe|pedir|peço|peco|pedido|delegar|delegue)\\s+(?:a|ao|à|para|pro|pra)\\s+(?:o\\s+|a\\s+)?${nameGroup}\\s*[,:]?\\s*`,
+        "i"
+      ),
+      ""
+    );
+    text = text.replace(
+      new RegExp(
+        `^(?:tarefa|atividade)\\s+(?:para|pro|pra)\\s+(?:o\\s+|a\\s+)?${nameGroup}\\s*[,:]?\\s*`,
+        "i"
+      ),
+      ""
+    );
+
+    // "para Victor, ..." or leading "para Victor "
     text = text.replace(new RegExp(`^para\\s+(?:o\\s+|a\\s+)?${nameGroup}\\s*[,:]?\\s*`, "i"), "");
     // trailing ", para Victor" / " - Victor"
     text = text.replace(new RegExp(`\\s*[,\\-]\\s*(?:para\\s+)?${nameGroup}\\s*$`, "i"), "");
     text = text.replace(new RegExp(`\\s+\\(${nameGroup}\\)\\s*$`, "i"), "");
-  } else {
-    text = text.replace(new RegExp(`^para\\s+(?:o\\s+|a\\s+)?${NAME_1_TO_3}\\s*[,:]?\\s*`, "i"), "");
   }
 
   // Collapse leftover connective "por favor" only when hanging alone after strip
