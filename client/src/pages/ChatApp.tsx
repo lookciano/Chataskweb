@@ -78,8 +78,12 @@ export default function ChatApp() {
   const [mentionStart, setMentionStart] = useState<number | null>(null);
   const [mentionHighlight, setMentionHighlight] = useState(0);
   const messageInputRef = useRef<HTMLTextAreaElement | null>(null);
-  const seenMessageIdsRef = useRef<Set<number>>(new Set());
-  const bootstrappedNotifyRef = useRef(false);
+  // Mapa por sala: roomId → Set de messageIds já vistos.
+  // Não é resetado ao trocar de sala, para que mensagens antigas de salas
+  // visitadas anteriormente não disparem notificações novamente.
+  const seenMessageIdsRef = useRef<Map<number, Set<number>>>(new Map());
+  // Set de roomIds que já passaram pelo bootstrap de notificação.
+  const bootstrappedRoomsRef = useRef<Set<number>>(new Set());
   // Timestamp de quando o usuário entrou na sala atual — usado para filtrar
   // notificações: só dispara toast/push para mensagens criadas APÓS este momento.
   // Previne que mensagens históricas sejam notificadas ao reabrir o app.
@@ -509,31 +513,35 @@ export default function ChatApp() {
   // Reset mention UI when room changes
   useEffect(() => {
     closeMentionMenu();
-    seenMessageIdsRef.current = new Set();
-    bootstrappedNotifyRef.current = false;
-    // Registra quando o usuário entrou na sala — apenas mensagens criadas
-    // após este momento serão elegíveis para notificação.
+    // Não resetamos seenMessageIdsRef nem bootstrappedRoomsRef aqui:
+    // eles agora são indexados por roomId, então mensagens de salas visitadas
+    // anteriormente continuam marcadas como "vistas" e não geram notificações.
     roomEnteredAtRef.current = Date.now();
   }, [selectedRoom]);
 
   // Signal replies-to-you and @mentions (no schema changes; plain-text @Name)
   useEffect(() => {
-    if (!user || messages.length === 0) return;
+    if (!user || !selectedRoom || messages.length === 0) return;
+
+    const roomId = selectedRoom;
+    const seenSet = seenMessageIdsRef.current.get(roomId) ?? new Set<number>();
 
     // First paint after load/history: mark all visible as seen (no toast spam)
-    if (!bootstrappedNotifyRef.current) {
-      for (const m of messages) seenMessageIdsRef.current.add(m.id);
-      bootstrappedNotifyRef.current = true;
+    if (!bootstrappedRoomsRef.current.has(roomId)) {
+      for (const m of messages) seenSet.add(m.id);
+      seenMessageIdsRef.current.set(roomId, seenSet);
+      bootstrappedRoomsRef.current.add(roomId);
       setLastMessageCount(messages.length);
       return;
     }
 
-    const fresh = messages.filter((m) => !seenMessageIdsRef.current.has(m.id));
+    const fresh = messages.filter((m) => !seenSet.has(m.id));
     if (!fresh.length) {
       setLastMessageCount(messages.length);
       return;
     }
-    for (const m of fresh) seenMessageIdsRef.current.add(m.id);
+    for (const m of fresh) seenSet.add(m.id);
+    seenMessageIdsRef.current.set(roomId, seenSet);
     setLastMessageCount(messages.length);
 
     for (const msg of fresh) {
@@ -572,7 +580,7 @@ export default function ChatApp() {
         notifyNewMessage(senderLabel, preview);
       }
     }
-  }, [messages, user?.id, user?.displayName, displayName, notifyNewMessage, setLastMessageCount]);
+  }, [messages, user?.id, user?.displayName, displayName, selectedRoom, notifyNewMessage, setLastMessageCount]);
   // Reset chat state when switching rooms
   useEffect(() => {
     setMessages([]);
