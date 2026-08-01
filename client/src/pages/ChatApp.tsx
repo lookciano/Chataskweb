@@ -80,6 +80,10 @@ export default function ChatApp() {
   const messageInputRef = useRef<HTMLTextAreaElement | null>(null);
   const seenMessageIdsRef = useRef<Set<number>>(new Set());
   const bootstrappedNotifyRef = useRef(false);
+  // Timestamp de quando o usuário entrou na sala atual — usado para filtrar
+  // notificações: só dispara toast/push para mensagens criadas APÓS este momento.
+  // Previne que mensagens históricas sejam notificadas ao reabrir o app.
+  const roomEnteredAtRef = useRef<number>(Date.now());
   const [messages, setMessages] = useState<Message[]>([]);
   const [hasMoreOlder, setHasMoreOlder] = useState(false);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
@@ -507,6 +511,9 @@ export default function ChatApp() {
     closeMentionMenu();
     seenMessageIdsRef.current = new Set();
     bootstrappedNotifyRef.current = false;
+    // Registra quando o usuário entrou na sala — apenas mensagens criadas
+    // após este momento serão elegíveis para notificação.
+    roomEnteredAtRef.current = Date.now();
   }, [selectedRoom]);
 
   // Signal replies-to-you and @mentions (no schema changes; plain-text @Name)
@@ -531,6 +538,12 @@ export default function ChatApp() {
 
     for (const msg of fresh) {
       if (msg.senderId === user.id) continue;
+      // Filtro de timestamp: só notifica mensagens criadas APÓS o momento
+      // em que o usuário entrou na sala. Isso impede que mensagens antigas
+      // (recebidas via polling ou cache do React Query ao reabrir o app)
+      // disparem notificações.
+      if (msg.createdAt.getTime() <= roomEnteredAtRef.current) continue;
+
       const senderLabel = msg.senderName || getUserDisplayName(msg.senderId);
       const preview = msg.content.substring(0, 80);
       const mentioned = messageMentionsMe(msg.content);

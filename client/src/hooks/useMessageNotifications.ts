@@ -24,16 +24,18 @@ export function useMessageNotifications() {
       position: "top-right",
     });
 
-    // Web Push Notification (apenas desktop)
+    // Web Push Notification — usa tag única por mensagem para evitar
+    // acúmulo/reexibição de notificações antigas ao reabrir o app.
     if (
       "Notification" in window &&
       notificationPermissionRef.current === "granted"
     ) {
       try {
+        const notifTag = `chat-msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         new Notification(`Nova mensagem de ${senderName}`, {
           body: messagePreview,
           icon: "/favicon.ico",
-          tag: "chat-notification",
+          tag: notifTag,
           requireInteraction: false,
         });
       } catch (error) {
