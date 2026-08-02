@@ -525,14 +525,13 @@ export const appRouter = router({
         await sendPushNotificationForMessage(1, 999, "Teste Push", "Esta é uma notificação de teste do Chat Task!");
         return { success: true as const, message: "Push de teste disparado" };
       }),
-    pushDebug: protectedProcedure
-      .query(async ({ ctx }) => {
+    pushDebug: publicProcedure
+      .query(async () => {
         const sa = process.env.FIREBASE_SERVICE_ACCOUNT;
         return {
           firebaseConfigured: !!sa,
           serviceAccountLength: sa ? sa.length : 0,
-          serviceAccountStart: sa ? sa.substring(0, 30) : null,
-          userId: ctx.user.id,
+          serviceAccountStart: sa ? sa.substring(0, 50) : null,
         };
       }),
     updateStatus: protectedProcedure
