@@ -19,7 +19,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { MessageCircle, CheckCircle2, Clock, AlertCircle, Plus, BarChart3, Reply, X, Menu, Settings, Users, ArrowLeft, Trash2, Sparkles, Edit2, MoreVertical, ThumbsUp } from "lucide-react";
+import { MessageCircle, CheckCircle2, Clock, AlertCircle, Plus, BarChart3, Reply, X, Menu, Settings, Users, ArrowLeft, Trash2, Sparkles, Edit2, MoreVertical, ThumbsUp, ListTodo } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -56,6 +56,10 @@ interface Task {
   assignedToId?: number;
   assignedToName?: string | null;
   creatorId: number;
+  /** ID da sala (presente em getTasksByUser cross-room). */
+  chatRoomId?: number;
+  /** Nome da sala (vindo do JOIN em getTasksByUser). */
+  roomName?: string | null;
 }
 
 interface Participant {
@@ -95,13 +99,15 @@ export default function ChatApp() {
   const messagesRef = useRef<Message[]>([]);
   const loadingOlderRef = useRef(false);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [myTasks, setMyTasks] = useState<Task[]>([]);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [replyingToId, setReplyingToId] = useState<number | null>(null);
   const [replyingToContent, setReplyingToContent] = useState<string>("");
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showMyTasks, setShowMyTasks] = useState(false);
   const [displayName, setDisplayName] = useState(user?.displayName || user?.name || "");
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
-  const [mobileView, setMobileView] = useState<"chat" | "rooms" | "participants" | "tasks">("chat");
+  const [mobileView, setMobileView] = useState<"chat" | "rooms" | "participants" | "tasks" | "myTasks">("chat");
   const [showParticipantsModal, setShowParticipantsModal] = useState(false);
   const [memberToAddId, setMemberToAddId] = useState<string>("");
   const [hasUnreadBelow, setHasUnreadBelow] = useState(false);
@@ -151,6 +157,14 @@ export default function ChatApp() {
   const tasksQuery = trpc.tasks.list.useQuery(
     { chatRoomId: selectedRoom || 0 },
     { enabled: !!selectedRoom && !!user }
+  );
+  const myTasksQuery = trpc.tasks.myTasks.useQuery(
+    { status: undefined },
+    {
+      enabled: !!user && (showMyTasks || (isMobile && mobileView === "myTasks")),
+      refetchOnWindowFocus: false,
+      staleTime: 10_000,
+    }
   );
   const participantsQuery = trpc.chat.getParticipants.useQuery(
     { chatRoomId: selectedRoom || 0 },
@@ -438,6 +452,21 @@ export default function ChatApp() {
       );
     }
   }, [tasksQuery.data]);
+
+  // Update myTasks (cross-room) when query changes
+  useEffect(() => {
+    if (myTasksQuery.data) {
+      setMyTasks(
+        (myTasksQuery.data as any[]).map((task) => ({
+          ...task,
+          createdAt: new Date(task.createdAt),
+          completedAt: task.completedAt ? new Date(task.completedAt) : null,
+          updatedAt: task.updatedAt ? new Date(task.updatedAt) : undefined,
+          dueDate: task.dueDate ? new Date(task.dueDate) : undefined,
+        }))
+      );
+    }
+  }, [myTasksQuery.data]);
 
   // Update participants
   useEffect(() => {
@@ -976,6 +1005,46 @@ export default function ChatApp() {
         return b.id - a.id;
       });
 
+  // --- Minhas Tarefas (cross-room) ---
+  const getFilteredMyTasks = (taskList: Task[]) => {
+    return taskList.filter(task => {
+      if (filterKeyword.trim()) {
+        const keyword = filterKeyword.toLowerCase();
+        if (!task.description.toLowerCase().includes(keyword)) {
+          return false;
+        }
+      }
+      return true;
+    });
+  };
+
+  /** Agrupa tarefas por roomName, preservando ordem original dentro de cada sala. */
+  const groupMyTasksByRoom = (taskList: Task[]): { roomName: string; tasks: Task[] }[] => {
+    const groups: { roomName: string; tasks: Task[] }[] = [];
+    const seen = new Map<string, number>();
+    for (const t of taskList) {
+      const name = t.roomName || `Sala #${t.chatRoomId}`;
+      const idx = seen.get(name);
+      if (idx === undefined) {
+        seen.set(name, groups.length);
+        groups.push({ roomName: name, tasks: [t] });
+      } else {
+        groups[idx].tasks.push(t);
+      }
+    }
+    return groups;
+  };
+
+  const handleToggleMyTask = async (taskId: number, currentStatus: string) => {
+    const newStatus = currentStatus === "completed" ? "pending" : "completed";
+    try {
+      await updateTaskMutation.mutateAsync({ taskId, status: newStatus as any });
+      myTasksQuery.refetch();
+      tasksQuery.refetch();
+    } catch (error) {
+    }
+  };
+
 
   type ThumbsSummary = {
     messageId: number;
@@ -1259,6 +1328,124 @@ export default function ChatApp() {
       </span>
     </button>
   );
+
+  /** Renderiza o conteúdo "Minhas Tarefas" agrupado por sala — reusado no mobile e desktop. */
+  const renderMyTasksContent = () => {
+    const filtered = getFilteredMyTasks(myTasks);
+    const grouped = groupMyTasksByRoom(filtered);
+
+    if (myTasksQuery.isLoading && myTasks.length === 0) {
+      return <p className="text-center text-slate-400 py-8">Carregando suas tarefas…</p>;
+    }
+    if (myTasks.length === 0) {
+      return <p className="text-center text-slate-400 py-8">Nenhuma tarefa atribuída a você</p>;
+    }
+
+    return (
+      <div className="space-y-4">
+        <Tabs defaultValue="pending" className="w-full">
+          <TabsList className="grid w-full grid-cols-2 mb-4">
+            <TabsTrigger value="pending">Pendentes</TabsTrigger>
+            <TabsTrigger value="completed">Concluídas</TabsTrigger>
+          </TabsList>
+
+          {/* Pendentes */}
+          <TabsContent value="pending" className="space-y-4">
+            {grouped.filter(g => g.tasks.some(t => t.status !== "completed")).length === 0 ? (
+              <p className="text-center text-slate-400 py-8">Nenhuma tarefa pendente</p>
+            ) : (
+              grouped.map((group) => {
+                const pending = group.tasks.filter(t => t.status !== "completed");
+                if (pending.length === 0) return null;
+                return (
+                  <div key={group.roomName} className="space-y-2">
+                    <div className="flex items-center gap-2 px-1 py-1.5 sticky top-0 bg-white z-10">
+                      <MessageCircle className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                      <span className="text-xs font-semibold text-slate-700 truncate">{group.roomName}</span>
+                      <span className="text-[10px] text-slate-400 shrink-0">({pending.length})</span>
+                    </div>
+                    {pending.map((task) => (
+                      <Card key={task.id} className="group p-3 border border-slate-200 shadow-none">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="mb-1 min-w-0">
+                              {renderTaskDescription(task)}
+                            </div>
+                            <div className="flex flex-col gap-0.5">
+                              {task.assignedToName && (
+                                <span className="text-xs text-slate-500">👤 {task.assignedToName}</span>
+                              )}
+                              {renderTaskDates(task)}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <input
+                              type="checkbox"
+                              checked={false}
+                              onChange={() => handleToggleMyTask(task.id, task.status)}
+                              className="w-4 h-4 rounded border-slate-300"
+                              title="Concluir tarefa"
+                            />
+                            {taskActionsMenu(task)}
+                          </div>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                );
+              })
+            )}
+          </TabsContent>
+
+          {/* Concluídas */}
+          <TabsContent value="completed" className="space-y-4">
+            {grouped.filter(g => g.tasks.some(t => t.status === "completed")).length === 0 ? (
+              <p className="text-center text-slate-400 py-8">Nenhuma tarefa concluída</p>
+            ) : (
+              grouped.map((group) => {
+                const completed = getCompletedTasksNewestFirst(group.tasks);
+                if (completed.length === 0) return null;
+                return (
+                  <div key={group.roomName} className="space-y-2">
+                    <div className="flex items-center gap-2 px-1 py-1.5 sticky top-0 bg-white z-10">
+                      <MessageCircle className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                      <span className="text-xs font-semibold text-slate-700 truncate">{group.roomName}</span>
+                      <span className="text-[10px] text-slate-400 shrink-0">({completed.length})</span>
+                    </div>
+                    {completed.map((task) => (
+                      <Card key={task.id} className="p-3 opacity-70 border border-slate-200 shadow-none">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-slate-900 line-through">
+                              <span className="font-bold text-green-600">Tarefa {task.taskNumber}:</span> {task.description}
+                            </p>
+                            {task.assignedToName && (
+                              <span className="text-xs text-slate-500">👤 {task.assignedToName}</span>
+                            )}
+                            {renderTaskDates(task, { showCompleted: true })}
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <input
+                              type="checkbox"
+                              checked={true}
+                              onChange={() => handleToggleMyTask(task.id, task.status)}
+                              className="w-4 h-4 rounded border-slate-300"
+                              title="Reabrir tarefa"
+                            />
+                            {taskActionsMenu(task, { withEdit: false })}
+                          </div>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                );
+              })
+            )}
+          </TabsContent>
+        </Tabs>
+      </div>
+    );
+  };
 
   const formatTaskDate = (value?: Date | null) => {
     if (!value) return "—";
@@ -1745,6 +1932,15 @@ export default function ChatApp() {
               {identityChip}
             </>
           )}
+          {mobileView === "myTasks" && (
+            <>
+              <div className="flex-1 min-w-0">
+                <h1 className="text-base font-semibold text-slate-900">Minhas Tarefas</h1>
+                <p className="text-[11px] text-slate-500 truncate">{currentIdentityLabel}</p>
+              </div>
+              {identityChip}
+            </>
+          )}
         </div>
 
         {/* Mobile Rooms View */}
@@ -1922,6 +2118,25 @@ export default function ChatApp() {
                     </TabsContent>
                   </Tabs>
                 </div>
+              </ScrollArea>
+            </div>
+          </div>
+        )}
+
+        {/* Mobile My Tasks View — cross-room, grouped by sala */}
+        {mobileView === "myTasks" && (
+          <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+            <div className="border-b border-slate-200 bg-slate-50 p-3">
+              <Input
+                placeholder="Buscar tarefa..."
+                value={filterKeyword}
+                onChange={(e) => setFilterKeyword(e.target.value)}
+                className="text-sm"
+              />
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <ScrollArea className="h-full p-4">
+                {renderMyTasksContent()}
               </ScrollArea>
             </div>
           </div>
@@ -2166,6 +2381,17 @@ export default function ChatApp() {
             >
               <CheckCircle2 className="w-5 h-5 mx-auto mb-0.5" />
               Tarefas
+            </button>
+            <button
+              onClick={() => setMobileView("myTasks")}
+              className={`flex-1 py-2.5 px-3 text-center text-xs font-medium transition-colors ${
+                mobileView === "myTasks"
+                  ? "text-teal-600 border-t-2 border-teal-600"
+                  : "text-slate-500 hover:text-slate-800 hover:bg-slate-50"
+              }`}
+            >
+              <ListTodo className="w-5 h-5 mx-auto mb-0.5" />
+              Minhas
             </button>
             <button
               onClick={() => setMobileView("rooms")}
@@ -2557,6 +2783,15 @@ export default function ChatApp() {
             </DropdownMenu>
           </div>
           {identityChip}
+          <button
+            type="button"
+            onClick={() => setShowMyTasks(true)}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-teal-300 transition-colors text-sm font-medium"
+            title="Ver suas tarefas de todas as salas"
+          >
+            <ListTodo className="w-4 h-4 text-teal-600 shrink-0" />
+            <span>Minhas Tarefas</span>
+          </button>
         </div>
 
         <ScrollArea className="flex-1 p-4">
@@ -3220,6 +3455,50 @@ export default function ChatApp() {
                   </Button>
                 )}
               </div>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Minhas Tarefas Overlay — Desktop (Option B: modal fullscreen) */}
+      {showMyTasks && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-2xl mx-4 max-h-[85vh] flex flex-col overflow-hidden">
+            {/* Header do overlay */}
+            <div className="flex items-center justify-between p-5 border-b border-slate-200 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-teal-50">
+                  <ListTodo className="w-5 h-5 text-teal-600" />
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900">Minhas Tarefas</h3>
+                  <p className="text-[11px] text-slate-500">Todas as salas — {currentIdentityLabel}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowMyTasks(false)}
+                className="text-slate-400 hover:text-slate-600 p-1"
+                aria-label="Fechar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Busca */}
+            <div className="p-4 border-b border-slate-200 bg-slate-50 shrink-0">
+              <Input
+                placeholder="Buscar tarefa..."
+                value={filterKeyword}
+                onChange={(e) => setFilterKeyword(e.target.value)}
+                className="text-sm"
+              />
+            </div>
+
+            {/* Conteúdo scrollável */}
+            <div className="flex-1 overflow-hidden min-h-0">
+              <ScrollArea className="h-full p-4">
+                {renderMyTasksContent()}
+              </ScrollArea>
             </div>
           </Card>
         </div>

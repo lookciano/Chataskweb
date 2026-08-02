@@ -1000,18 +1000,38 @@ export async function getTasksByChatRoom(chatRoomId: number) {
 export async function getTasksByUser(userId: number, status?: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  
-  if (status) {
-    return await db
-      .select()
+
+  // JOIN with chatRooms to include roomName for cross-room grouping
+  const buildQuery = () =>
+    db
+      .select({
+        id: tasks.id,
+        messageId: tasks.messageId,
+        chatRoomId: tasks.chatRoomId,
+        roomName: chatRooms.name,
+        creatorId: tasks.creatorId,
+        assignedToId: tasks.assignedToId,
+        assignedToName: tasks.assignedToName,
+        taskNumber: tasks.taskNumber,
+        description: tasks.description,
+        dueDate: tasks.dueDate,
+        priority: tasks.priority,
+        status: tasks.status,
+        lastResponseMessageId: tasks.lastResponseMessageId,
+        createdAt: tasks.createdAt,
+        completedAt: tasks.completedAt,
+        updatedAt: tasks.updatedAt,
+      })
       .from(tasks)
+      .leftJoin(chatRooms, eq(tasks.chatRoomId, chatRooms.id));
+
+  if (status) {
+    return await buildQuery()
       .where(and(eq(tasks.assignedToId, userId), eq(tasks.status, status as any)))
       .orderBy(tasks.dueDate);
   }
-  
-  return await db
-    .select()
-    .from(tasks)
+
+  return await buildQuery()
     .where(eq(tasks.assignedToId, userId))
     .orderBy(tasks.dueDate);
 }
