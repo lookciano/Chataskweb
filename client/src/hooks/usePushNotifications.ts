@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { PushNotifications, Token, PushNotificationSchema } from "@capacitor/push-notifications";
+import { Capacitor } from "@capacitor/core";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 
@@ -16,11 +17,11 @@ export function usePushNotifications() {
   useEffect(() => {
     if (!user) return;
 
-    // Verifica se está rodando no Capacitor
-    const isCapacitor =
-      typeof window !== "undefined" && window.location.hostname === "localhost";
+    // Usa a API oficial do Capacitor para detectar plataforma nativa
+    const isNative = Capacitor.isNativePlatform();
+    console.log("[Push] isNative:", isNative, "platform:", Capacitor.getPlatform());
 
-    if (!isCapacitor) return;
+    if (!isNative) return;
 
     let mounted = true;
 

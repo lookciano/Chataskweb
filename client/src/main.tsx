@@ -3,18 +3,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
 import { createRoot } from "react-dom/client";
 import superjson from "superjson";
+import { Capacitor } from "@capacitor/core";
 import App from "./App";
 import "./index.css";
 
 const queryClient = new QueryClient();
 
-// Detecta se está rodando dentro do Capacitor (Android/iOS WebView).
-// Com androidScheme: 'https', o protocol é https: mas hostname é localhost.
-// No navegador normal (Render), hostname é chataskweb.onrender.com.
-const isCapacitor =
-  typeof window !== "undefined" &&
-  (window.location.protocol.startsWith("capacitor") ||
-   window.location.hostname === "localhost");
+// Detecta plataforma nativa (Capacitor) via API oficial
+const isCapacitor = Capacitor.isNativePlatform();
 
 // URL do backend — absoluta quando no Capacitor, relativa quando no navegador
 const trpcUrl = isCapacitor
