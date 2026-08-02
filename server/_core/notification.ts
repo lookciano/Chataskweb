@@ -40,13 +40,24 @@ export async function sendPushNotificationForMessage(
   messageContent: string
 ) {
   try {
-    if (!initFirebase()) return;
+    console.log(`[FCM] Iniciando push: room=${chatRoomId}, sender=${senderId}, name=${senderName}`);
+    const fbOk = initFirebase();
+    console.log(`[FCM] Firebase initialized: ${fbOk}`);
+    if (!fbOk) {
+      console.log("[FCM] FIREBASE_SERVICE_ACCOUNT env var:", process.env.FIREBASE_SERVICE_ACCOUNT ? "SET (" + process.env.FIREBASE_SERVICE_ACCOUNT.length + " chars)" : "NOT SET");
+      return;
+    }
 
     const room = await getChatRoomById(chatRoomId);
     const roomName = room?.name || "Sala";
+    console.log(`[FCM] Room: ${roomName}`);
 
     const tokenRecords = await getDeviceTokensForRoom(chatRoomId, senderId);
-    if (tokenRecords.length === 0) return;
+    console.log(`[FCM] Tokens found: ${tokenRecords.length}`, tokenRecords.map((t: {userId: number}) => t.userId));
+    if (tokenRecords.length === 0) {
+      console.log("[FCM] No tokens — no one to notify (sender excluded or no members with tokens)");
+      return;
+    }
 
     const tokens: string[] = tokenRecords.map((t: { token: string; userId: number }) => t.token);
 

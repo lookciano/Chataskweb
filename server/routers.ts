@@ -519,6 +519,12 @@ export const appRouter = router({
       .query(async ({ input }) => {
         return await db.getAllTasks(input.status);
       }),
+    testPush: protectedProcedure
+      .input(z.object({}).optional())
+      .mutation(async ({ ctx }) => {
+        await sendPushNotificationForMessage(1, 999, "Teste Push", "Esta é uma notificação de teste do Chat Task!");
+        return { success: true as const, message: "Push de teste disparado" };
+      }),
     updateStatus: protectedProcedure
       .input(z.object({
         taskId: z.number(),
