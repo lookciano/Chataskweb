@@ -519,19 +519,10 @@ export const appRouter = router({
       .query(async ({ input }) => {
         return await db.getAllTasks(input.status);
       }),
-    testPush: publicProcedure
+    testPush: protectedProcedure
       .mutation(async () => {
         const result = await testPushNotification();
         return result;
-      }),
-    pushDebug: publicProcedure
-      .query(async () => {
-        const sa = process.env.FIREBASE_SERVICE_ACCOUNT;
-        return {
-          firebaseConfigured: !!sa,
-          serviceAccountLength: sa ? sa.length : 0,
-          serviceAccountStart: sa ? sa.substring(0, 50) : null,
-        };
       }),
     updateStatus: protectedProcedure
       .input(z.object({
