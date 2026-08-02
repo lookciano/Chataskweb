@@ -124,3 +124,7 @@ GITHUB_SSH_PUBLIC_KEY.txt
 .env
 .env.*
 !.env.example
+
+# Capacitor — projeto nativo Android (gerado por cap add/sync)
+android/
+capacitor.config.json

@@ -8,10 +8,23 @@ import "./index.css";
 
 const queryClient = new QueryClient();
 
+// Detecta se está rodando dentro do Capacitor (Android/iOS WebView).
+// No Capacitor, o origin é capacitor://localhost (Android) ou capacitor://...
+// No navegador, é https://chataskweb.onrender.com
+const isCapacitor =
+  typeof window !== "undefined" &&
+  (window.location.protocol.startsWith("capacitor") ||
+   window.location.protocol.startsWith("http") === false && window.location.protocol !== "https:");
+
+// URL do backend — absoluta quando no Capacitor, relativa quando no navegador
+const trpcUrl = isCapacitor
+  ? "https://chataskweb.onrender.com/api/trpc"
+  : "/api/trpc";
+
 const trpcClient = trpc.createClient({
   links: [
     httpBatchLink({
-      url: "/api/trpc",
+      url: trpcUrl,
       transformer: superjson,
       fetch(input, init) {
         return globalThis.fetch(input, {

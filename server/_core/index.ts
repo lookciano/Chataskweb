@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express from "express";
+import cors from "cors";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
@@ -37,6 +38,15 @@ async function startServer() {
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+  // CORS para Capacitor (Android/iOS WebView) — permite cookies cross-origin
+  app.use(
+    cors({
+      origin: true, // reflete a origem da requisição
+      credentials: true, // permite cookies cross-origin
+    })
+  );
+
   registerStorageProxy(app);
   // Local JWT identity replaces Manus OAuth (select existing team member).
   // tRPC API

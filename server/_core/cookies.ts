@@ -24,22 +24,25 @@ function isSecureRequest(req: Request) {
 export function getSessionCookieOptions(
   req: Request
 ): Pick<CookieOptions, "domain" | "httpOnly" | "path" | "sameSite" | "secure"> {
-  // const hostname = req.hostname;
-  // const shouldSetDomain =
-  //   hostname &&
-  //   !LOCAL_HOSTS.has(hostname) &&
-  //   !isIpAddress(hostname) &&
-  //   hostname !== "127.0.0.1" &&
-  //   hostname !== "::1";
-
-  // const domain =
-  //   shouldSetDomain && !hostname.startsWith(".")
-  //     ? `.${hostname}`
-  //     : shouldSetDomain
-  //       ? hostname
-  //       : undefined;
-
   const secure = isSecureRequest(req);
+
+  // Detecta requisições do Capacitor (Android/iOS WebView) via Origin header.
+  // Origin do Capacitor: capacitor://localhost ou https://localhost
+  // Para essas requisições cross-origin, precisa SameSite=None + Secure
+  const origin = req.headers.origin || "";
+  const isCapacitorRequest =
+    origin.startsWith("capacitor://") ||
+    origin.startsWith("http://localhost") && !req.hostname.includes("localhost");
+
+  if (isCapacitorRequest && secure) {
+    return {
+      httpOnly: true,
+      path: "/",
+      sameSite: "none",
+      secure: true,
+    };
+  }
+
   return {
     httpOnly: true,
     path: "/",
