@@ -9,12 +9,12 @@ import "./index.css";
 const queryClient = new QueryClient();
 
 // Detecta se está rodando dentro do Capacitor (Android/iOS WebView).
-// No Capacitor, o origin é capacitor://localhost (Android) ou capacitor://...
-// No navegador, é https://chataskweb.onrender.com
+// Com androidScheme: 'https', o protocol é https: mas hostname é localhost.
+// No navegador normal (Render), hostname é chataskweb.onrender.com.
 const isCapacitor =
   typeof window !== "undefined" &&
   (window.location.protocol.startsWith("capacitor") ||
-   window.location.protocol.startsWith("http") === false && window.location.protocol !== "https:");
+   window.location.hostname === "localhost");
 
 // URL do backend — absoluta quando no Capacitor, relativa quando no navegador
 const trpcUrl = isCapacitor

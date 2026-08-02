@@ -1905,7 +1905,7 @@ export default function ChatApp() {
           {mobileView === "rooms" && (
             <>
               <div className="flex items-center gap-2 flex-1 min-w-0 pr-2">
-                <img src="/favicon.ico" alt="ChaTask" className="w-8 h-8 rounded-lg shrink-0" />
+                <img src={(typeof window !== "undefined" && window.location.hostname === "localhost") ? "https://chataskweb.onrender.com/favicon.ico" : "/favicon.ico"} alt="ChaTask" className="w-8 h-8 rounded-lg shrink-0" />
                 <div className="min-w-0">
                   <h1 className="text-base font-semibold text-slate-900 tracking-tight truncate">ChaTask</h1>
                   <p className="text-[11px] text-slate-500 truncate">Salas</p>
@@ -2743,7 +2743,7 @@ export default function ChatApp() {
         {isResizing && <div className="fixed inset-0 cursor-col-resize z-50" />}
         <div className="p-5 border-b border-slate-200 space-y-3">
           <div className="flex items-center gap-3">
-            <img src="/favicon.ico" alt="ChaTask" className="w-9 h-9 rounded-lg" />
+            <img src={(typeof window !== "undefined" && window.location.hostname === "localhost") ? "https://chataskweb.onrender.com/favicon.ico" : "/favicon.ico"} alt="ChaTask" className="w-9 h-9 rounded-lg" />
             <div className="min-w-0 flex-1">
               <h1 className="text-lg font-semibold text-slate-900 tracking-tight truncate">ChaTask</h1>
               <p className="text-[11px] text-slate-500">Sua conversa produtiva!</p>
@@ -3092,7 +3092,7 @@ export default function ChatApp() {
       <div style={{ width: `${widths.tasks}%` }} className="bg-white flex flex-col max-h-screen transition-all duration-75 overflow-hidden">
         <div className="p-5 border-b border-slate-200">
           <div className="flex items-center gap-3">
-            <img src="/favicon.ico" alt="Tarefas" className="w-8 h-8 rounded-lg" />
+            <img src={(typeof window !== "undefined" && window.location.hostname === "localhost") ? "https://chataskweb.onrender.com/favicon.ico" : "/favicon.ico"} alt="Tarefas" className="w-8 h-8 rounded-lg" />
             <h2 className="text-base font-semibold text-slate-900">Tarefas</h2>
           </div>
         </div>

@@ -128,3 +128,5 @@ GITHUB_SSH_PUBLIC_KEY.txt
 # Capacitor — projeto nativo Android (gerado por cap add/sync)
 android/
 capacitor.config.json
+chat-task.keystore
+*.keystore
