@@ -575,6 +575,25 @@ export default function ChatApp() {
     return () => viewport.removeEventListener('scroll', handleScroll);
   }, [messages, hasMoreOlder, selectedRoom]);
 
+  // Scroll ao final quando volta para a aba Chat no mobile
+  useEffect(() => {
+    if (isMobile && mobileView === "chat" && selectedRoom && messages.length > 0) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const viewport = scrollContainerRef.current?.querySelector(
+            '[data-radix-scroll-area-viewport]'
+          ) as HTMLDivElement;
+          if (viewport) {
+            viewport.scrollTo({
+              top: viewport.scrollHeight,
+              behavior: 'auto'
+            });
+          }
+        });
+      });
+    }
+  }, [isMobile, mobileView, selectedRoom]);
+
   // Reset mention UI when room changes
   useEffect(() => {
     closeMentionMenu();
