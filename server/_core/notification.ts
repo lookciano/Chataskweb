@@ -90,8 +90,61 @@ export async function sendPushNotificationForMessage(
     const messaging = getMessaging();
     const response = await messaging.sendEachForMulticast(message);
     console.log(`[FCM] Push enviado: ${response.successCount} sucesso, ${response.failureCount} falha`);
-  } catch (error) {
-    console.warn("[FCM] Erro ao enviar push:", error);
+
+    if (response.failureCount > 0) {
+      response.responses.forEach((resp, idx) => {
+        if (!resp.success) {
+          console.warn(`[FCM] Token ${idx} falhou:`, resp.error?.message, resp.error?.code);
+        }
+      });
+    }
+  } catch (error: any) {
+    console.warn("[FCM] Erro ao enviar push:", error?.message || error);
+    console.warn("[FCM] Stack:", error?.stack);
+  }
+}
+
+/** Função de teste que retorna o resultado do push (para diagnóstico). */
+export async function testPushNotification(): Promise<{ success: boolean; error?: string; tokensCount?: number }> {
+  try {
+    const fbOk = initFirebase();
+    if (!fbOk) return { success: false, error: "Firebase não inicializado" };
+
+    // Buscar todos os tokens
+    const { getDeviceTokensForRoom } = await import("../db");
+    // Usar sala 300038 onde o Luciano (userId 1) está
+    const tokens = await getDeviceTokensForRoom(300038, 180001);
+    if (tokens.length === 0) return { success: false, error: "Nenhum token encontrado", tokensCount: 0 };
+
+    const messaging = getMessaging();
+    const response = await messaging.sendEachForMulticast({
+      tokens: tokens.map((t: {token: string}) => t.token),
+      notification: { title: "Teste Push", body: "Notificação de teste do Chat Task" },
+      data: { type: "test" },
+      android: {
+        notification: {
+          channelId: "chat_messages",
+          priority: "high" as any,
+          icon: "ic_launcher",
+          color: "#0f766e",
+        },
+      },
+    });
+
+    const errors: string[] = [];
+    response.responses.forEach((resp, idx) => {
+      if (!resp.success) {
+        errors.push(`Token ${idx}: ${resp.error?.message} (${resp.error?.code})`);
+      }
+    });
+
+    return {
+      success: response.successCount > 0,
+      error: errors.length > 0 ? errors.join("; ") : undefined,
+      tokensCount: tokens.length,
+    };
+  } catch (error: any) {
+    return { success: false, error: error?.message || String(error) };
   }
 }
 

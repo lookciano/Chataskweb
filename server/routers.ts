@@ -15,7 +15,7 @@ import { normalizeName, findByNormalizedName } from "../shared/normalizeNames";
 import { generateWeeklySummary, calculateWeeklySummaryData } from "./weekly-summary-generator";
 import { validateAndFixRoomTasks, getParticipantNameVariations } from "./task-name-validator";
 import { getUniqueParticipantNames } from "./participant-name-matcher";
-import { sendPushNotificationForMessage } from "./_core/notification";
+import { sendPushNotificationForMessage, testPushNotification } from "./_core/notification";
 
 async function assertRoomAccess(
   ctx: { user: { id: number; role?: string | null } | null },
@@ -519,11 +519,10 @@ export const appRouter = router({
       .query(async ({ input }) => {
         return await db.getAllTasks(input.status);
       }),
-    testPush: protectedProcedure
-      .input(z.object({}).optional())
-      .mutation(async ({ ctx }) => {
-        await sendPushNotificationForMessage(1, 999, "Teste Push", "Esta é uma notificação de teste do Chat Task!");
-        return { success: true as const, message: "Push de teste disparado" };
+    testPush: publicProcedure
+      .mutation(async () => {
+        const result = await testPushNotification();
+        return result;
       }),
     pushDebug: publicProcedure
       .query(async () => {
