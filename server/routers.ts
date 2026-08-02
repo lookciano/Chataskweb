@@ -15,6 +15,7 @@ import { normalizeName, findByNormalizedName } from "../shared/normalizeNames";
 import { generateWeeklySummary, calculateWeeklySummaryData } from "./weekly-summary-generator";
 import { validateAndFixRoomTasks, getParticipantNameVariations } from "./task-name-validator";
 import { getUniqueParticipantNames } from "./participant-name-matcher";
+import { sendPushNotificationForMessage } from "./_core/notification";
 
 async function assertRoomAccess(
   ctx: { user: { id: number; role?: string | null } | null },
@@ -150,6 +151,23 @@ export const appRouter = router({
           maxAge: ONE_YEAR_MS,
         });
         return updated;
+      }),
+    registerDevice: protectedProcedure
+      .input(z.object({
+        token: z.string().min(10),
+        platform: z.enum(["android", "ios"]).optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await db.registerDeviceToken(ctx.user.id, input.token, input.platform || "android");
+        return { success: true as const };
+      }),
+    unregisterDevice: protectedProcedure
+      .input(z.object({
+        token: z.string().min(10),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await db.removeDeviceToken(ctx.user.id, input.token);
+        return { success: true as const };
       }),
   }),
 
@@ -412,6 +430,13 @@ export const appRouter = router({
           replyToId: input.replyToId,
         });
         // Do NOT auto-join senders anymore — membership is explicit (Phase 1)
+        // Enviar push notification para os membros da sala (não bloqueia a resposta)
+        sendPushNotificationForMessage(
+          input.chatRoomId,
+          ctx.user.id,
+          senderName,
+          input.content
+        ).catch(() => { /* erro de push não afeta o envio da mensagem */ });
         return message;
       }),
     getReplies: publicProcedure

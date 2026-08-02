@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useMessageNotifications } from "@/hooks/useMessageNotifications";
 import { useResizableColumns } from "@/hooks/useResizableColumns";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { ResizableDivider } from "@/components/ResizableDivider";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -75,6 +76,7 @@ export default function ChatApp() {
   const { user, loading, identities, needsIdentity, selectIdentity, selecting, logout, isAuthenticated } = useAuth();
   const isPlatformAdmin = user?.role === "admin";
   const { notifyNewMessage, setLastMessageCount } = useMessageNotifications();
+  usePushNotifications();
   const [selectedRoom, setSelectedRoom] = useState<number | null>(null);
   const [messageInput, setMessageInput] = useState("");
   const [mentionOpen, setMentionOpen] = useState(false);
@@ -370,6 +372,19 @@ export default function ChatApp() {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
+
+  // Trocar de sala quando clicar em push notification
+  useEffect(() => {
+    const handlePushClick = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.chatRoomId) {
+        setSelectedRoom(detail.chatRoomId);
+        if (isMobile) setMobileView("chat");
+      }
+    };
+    window.addEventListener("push-notification-click", handlePushClick);
+    return () => window.removeEventListener("push-notification-click", handlePushClick);
+  }, [isMobile]);
 
   // Initialize first room
   useEffect(() => {

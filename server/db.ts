@@ -12,6 +12,7 @@ import {
   roomMembers,
   roomInvites,
   roomReadState,
+  deviceTokens,
   InsertChatRoom,
   InsertMessage,
   InsertTask,
@@ -1571,4 +1572,64 @@ export async function getChatRoomById(chatRoomId: number) {
     .limit(1);
   
   return result[0];
+}
+
+// ==================== PUSH NOTIFICATIONS ====================
+
+/** Registra ou atualiza um device token FCM para o usuário. */
+export async function registerDeviceToken(userId: number, token: string, platform: "android" | "ios" = "android") {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Upsert: se já existe (userId+token), atualiza updatedAt; senão insere
+  await db
+    .insert(deviceTokens)
+    .values({ userId, token, platform })
+    .onDuplicateKeyUpdate({
+      set: { updatedAt: new Date() },
+    });
+  return { success: true as const };
+}
+
+/** Remove um device token (quando usuário faz logout ou app desinstalado). */
+export async function removeDeviceToken(userId: number, token: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  await db
+    .delete(deviceTokens)
+    .where(and(eq(deviceTokens.userId, userId), eq(deviceTokens.token, token)));
+  return { success: true as const };
+}
+
+/** Busca todos os device tokens dos membros de uma sala (excluindo o remetente). */
+export async function getDeviceTokensForRoom(chatRoomId: number, excludeUserId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Buscar membros da sala
+  const members = await db
+    .select({ userId: roomMembers.userId })
+    .from(roomMembers)
+    .where(and(eq(roomMembers.chatRoomId, chatRoomId), eq(roomMembers.status, "approved")));
+
+  // Buscar também participantes (chatRoomParticipants — sistema legado)
+  const participants = await db
+    .select({ userId: chatRoomParticipants.userId })
+    .from(chatRoomParticipants)
+    .where(eq(chatRoomParticipants.chatRoomId, chatRoomId));
+
+  const userIds = new Set<number>();
+  for (const m of members) if (m.userId !== excludeUserId) userIds.add(m.userId);
+  for (const p of participants) if (p.userId !== excludeUserId) userIds.add(p.userId);
+
+  if (userIds.size === 0) return [];
+
+  const ids = Array.from(userIds);
+  const tokens = await db
+    .select({ token: deviceTokens.token, userId: deviceTokens.userId })
+    .from(deviceTokens)
+    .where(inArray(deviceTokens.userId, ids));
+
+  return tokens;
 }

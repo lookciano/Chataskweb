@@ -147,3 +147,25 @@ export const roomReadState = mysqlTable(
 
 export type RoomReadState = typeof roomReadState.$inferSelect;
 export type InsertRoomReadState = typeof roomReadState.$inferInsert;
+
+/**
+ * Device tokens for push notifications (Firebase Cloud Messaging).
+ * Um usuário pode ter múltiplos devices (celular + tablet).
+ */
+export const deviceTokens = mysqlTable(
+  "deviceTokens",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    /** Token FCM único por dispositivo. */
+    token: varchar("token", { length: 512 }).notNull(),
+    /** Plataforma do dispositivo. */
+    platform: mysqlEnum("platform", ["android", "ios"]).default("android").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => [uniqueIndex("uq_device_token").on(table.userId, table.token)]
+);
+
+export type DeviceToken = typeof deviceTokens.$inferSelect;
+export type InsertDeviceToken = typeof deviceTokens.$inferInsert;
