@@ -100,6 +100,8 @@ export default function ChatApp() {
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const messagesRef = useRef<Message[]>([]);
   const loadingOlderRef = useRef(false);
+  // Flag para forçar scroll ao final quando mensagens carregarem ao entrar na sala
+  const autoScrollOnNextMessageRef = useRef(false);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [myTasks, setMyTasks] = useState<Task[]>([]);
   const [participants, setParticipants] = useState<Participant[]>([]);
@@ -447,6 +449,25 @@ export default function ChatApp() {
     setMessages(items);
     setHasMoreOlder(Array.isArray(page) ? items.length >= 50 : Boolean(page.hasMore));
     setIsLoadingMessages(false);
+    
+    // Força scroll ao final quando acaba de entrar em uma sala
+    // (double rAF para garantir que o DOM já renderizou as mensagens)
+    if (autoScrollOnNextMessageRef.current) {
+      autoScrollOnNextMessageRef.current = false;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const viewport = scrollContainerRef.current?.querySelector(
+            '[data-radix-scroll-area-viewport]'
+          ) as HTMLDivElement;
+          if (viewport) {
+            viewport.scrollTo({
+              top: viewport.scrollHeight,
+              behavior: 'auto'
+            });
+          }
+        });
+      });
+    }
   }, [messagesQuery.data, selectedRoom]);
 
   useEffect(() => {
@@ -635,9 +656,8 @@ export default function ChatApp() {
     setIsUserNearBottom(true);
     setFilterKeyword("");
     setFilterAssignedTo(null);
-    setTimeout(() => {
-      scrollToBottom(false);
-    }, 120);
+    // Marca que entrou em uma nova sala — scroll será feito quando as mensagens carregarem
+    autoScrollOnNextMessageRef.current = true;
   }, [selectedRoom]);
 
   const loadOlderMessages = async () => {
@@ -2358,7 +2378,7 @@ export default function ChatApp() {
                     onClick={(e) => updateMentionFromInput(e.currentTarget.value, e.currentTarget.selectionStart ?? 0)}
                     onKeyUp={(e) => updateMentionFromInput(e.currentTarget.value, e.currentTarget.selectionStart ?? 0)}
                     onKeyDown={handleComposerKeyDown}
-                    placeholder="Mensagem… Enter envia · Shift+Enter quebra linha · @ menciona"
+                    placeholder="Mensagem…"
                     rows={1}
                     className="flex-1 min-h-[44px] max-h-[6.5rem] resize-none overflow-y-hidden py-2.5 leading-5"
                   />
@@ -3079,7 +3099,7 @@ export default function ChatApp() {
                     onClick={(e) => updateMentionFromInput(e.currentTarget.value, e.currentTarget.selectionStart ?? 0)}
                     onKeyUp={(e) => updateMentionFromInput(e.currentTarget.value, e.currentTarget.selectionStart ?? 0)}
                     onKeyDown={handleComposerKeyDown}
-                    placeholder="Mensagem… Enter envia · Shift+Enter quebra linha · @ menciona"
+                    placeholder="Mensagem…"
                     rows={1}
                     className="flex-1 min-h-[44px] max-h-[6.5rem] resize-none overflow-y-hidden py-2.5 leading-5"
                   />
