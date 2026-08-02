@@ -27,12 +27,13 @@ export function getSessionCookieOptions(
   const secure = isSecureRequest(req);
 
   // Detecta requisições do Capacitor (Android/iOS WebView) via Origin header.
-  // Origin do Capacitor: capacitor://localhost ou https://localhost
+  // Origin do Capacitor: capacitor://localhost (default) ou https://localhost (androidScheme: https)
   // Para essas requisições cross-origin, precisa SameSite=None + Secure
   const origin = req.headers.origin || "";
   const isCapacitorRequest =
     origin.startsWith("capacitor://") ||
-    origin.startsWith("http://localhost") && !req.hostname.includes("localhost");
+    origin.startsWith("https://localhost") ||
+    origin.startsWith("http://localhost");
 
   if (isCapacitorRequest && secure) {
     return {
