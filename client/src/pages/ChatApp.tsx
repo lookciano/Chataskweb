@@ -2134,10 +2134,13 @@ export default function ChatApp() {
                 className="text-sm"
               />
             </div>
-            <div className="flex-1 overflow-hidden">
-              <ScrollArea className="h-full p-4">
-                {renderMyTasksContent()}
-              </ScrollArea>
+            <div className="flex-1 overflow-y-auto min-h-0 p-4
+                            [&::-webkit-scrollbar]:w-1.5
+                            [&::-webkit-scrollbar-track]:bg-transparent
+                            [&::-webkit-scrollbar-thumb]:bg-slate-300
+                            [&::-webkit-scrollbar-thumb]:rounded-full
+                            [&::-webkit-scrollbar-thumb:hover]:bg-slate-400">
+              {renderMyTasksContent()}
             </div>
           </div>
         )}
@@ -3463,7 +3466,7 @@ export default function ChatApp() {
       {/* Minhas Tarefas Overlay — Desktop (Option B: modal fullscreen) */}
       {showMyTasks && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <Card className="w-full max-w-2xl mx-4 max-h-[85vh] flex flex-col overflow-hidden">
+          <Card className="w-full max-w-2xl mx-4 max-h-[90vh] flex flex-col overflow-hidden">
             {/* Header do overlay */}
             <div className="flex items-center justify-between p-5 border-b border-slate-200 shrink-0">
               <div className="flex items-center gap-3">
@@ -3494,11 +3497,14 @@ export default function ChatApp() {
               />
             </div>
 
-            {/* Conteúdo scrollável */}
-            <div className="flex-1 overflow-hidden min-h-0">
-              <ScrollArea className="h-full p-4">
-                {renderMyTasksContent()}
-              </ScrollArea>
+            {/* Conteúdo scrollável — barra de rolagem nativa discreta */}
+            <div className="flex-1 overflow-y-auto min-h-0 p-4
+                            [&::-webkit-scrollbar]:w-1.5
+                            [&::-webkit-scrollbar-track]:bg-transparent
+                            [&::-webkit-scrollbar-thumb]:bg-slate-300
+                            [&::-webkit-scrollbar-thumb]:rounded-full
+                            [&::-webkit-scrollbar-thumb:hover]:bg-slate-400">
+              {renderMyTasksContent()}
             </div>
           </Card>
         </div>
