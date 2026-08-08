@@ -323,7 +323,55 @@ export function resolveUserDisplayName(user: User | null | undefined): string {
   return userLabel(user);
 }
 
-// Chat Room queries
+// ── Auth: email/password helpers ──────────────────────────────────────
+
+export async function getUserByEmail(email: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select()
+    .from(users)
+    .where(eq(users.email, email.toLowerCase().trim()))
+    .limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function createUser(input: {
+  name: string;
+  email: string;
+  passwordHash: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const email = input.email.toLowerCase().trim();
+  const openId = `email:${email}`;
+
+  const result = await db.insert(users).values({
+    openId,
+    name: input.name.trim(),
+    email,
+    passwordHash: input.passwordHash,
+    displayName: input.name.trim(),
+    loginMethod: "email",
+    role: "user",
+    lastSignedIn: new Date(),
+  });
+
+  const inserted = await getUserByEmail(email);
+  return inserted;
+}
+
+export async function updatePassword(userId: number, passwordHash: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .update(users)
+    .set({ passwordHash, updatedAt: new Date() })
+    .where(eq(users.id, userId));
+}
+
+// ── Chat Room queries ────────────────────────────────────────────────
 export async function createChatRoom(input: InsertChatRoom) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");

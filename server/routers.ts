@@ -7,6 +7,7 @@ import { TRPCError } from "@trpc/server";
 import * as db from "./db";
 import { ENV } from "./_core/env";
 import { createLocalSessionToken } from "./_core/session";
+import bcrypt from "bcryptjs";
 import { extractTasksFromMessage } from "./llm-task-extractor";
 import { interpretResponseForTaskUpdate } from "./llm-response-interpreter";
 import { detectTaskCompletionInMessage } from "./task-completion-detector";
@@ -103,6 +104,153 @@ export const appRouter = router({
             message: "Troca de identidade disponível apenas para administradores",
           });
         }
+
+        const label = user.displayName || user.name || `User ${user.id}`;
+        const token = await createLocalSessionToken({
+          openId: user.openId,
+          name: label,
+          userId: user.id,
+        });
+
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.cookie(COOKIE_NAME, token, {
+          ...cookieOptions,
+          maxAge: ONE_YEAR_MS,
+        });
+
+        await db.touchUserLastSignedIn(user.id);
+        return user;
+      }),
+    login: publicProcedure
+      .input(z.object({
+        email: z.string().email("Email inválido"),
+        password: z.string().min(6, "Senha deve ter no mínimo 6 caracteres"),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const email = input.email.toLowerCase().trim();
+        const user = await db.getUserByEmail(email);
+        if (!user) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Email não encontrado" });
+        }
+
+        // Existing user without password → needs first access
+        if (!user.passwordHash) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "PRIMEIRO_ACESSO",
+          });
+        }
+
+        const valid = await bcrypt.compare(input.password, user.passwordHash);
+        if (!valid) {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Senha incorreta" });
+        }
+
+        const label = user.displayName || user.name || `User ${user.id}`;
+        const token = await createLocalSessionToken({
+          openId: user.openId,
+          name: label,
+          userId: user.id,
+        });
+
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.cookie(COOKIE_NAME, token, {
+          ...cookieOptions,
+          maxAge: ONE_YEAR_MS,
+        });
+
+        await db.touchUserLastSignedIn(user.id);
+        return user;
+      }),
+    register: publicProcedure
+      .input(z.object({
+        name: z.string().min(2, "Nome deve ter no mínimo 2 caracteres").max(100),
+        email: z.string().email("Email inválido"),
+        password: z.string().min(6, "Senha deve ter no mínimo 6 caracteres"),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const email = input.email.toLowerCase().trim();
+
+        // Check if email already exists
+        const existing = await db.getUserByEmail(email);
+        if (existing) {
+          if (existing.passwordHash) {
+            throw new TRPCError({ code: "CONFLICT", message: "Este email já está cadastrado. Faça login." });
+          }
+          // Existing user without password → update password (first access)
+          const hash = await bcrypt.hash(input.password, 10);
+          await db.updatePassword(existing.id, hash);
+
+          // Also update displayName if provided
+          if (input.name.trim() && input.name.trim() !== existing.displayName) {
+            await db.updateUserProfile(existing.id, input.name.trim());
+          }
+
+          // Refresh user data
+          const user = await db.getUserById(existing.id);
+          const label = user!.displayName || user!.name || `User ${user!.id}`;
+          const token = await createLocalSessionToken({
+            openId: user!.openId,
+            name: label,
+            userId: user!.id,
+          });
+
+          const cookieOptions = getSessionCookieOptions(ctx.req);
+          ctx.res.cookie(COOKIE_NAME, token, {
+            ...cookieOptions,
+            maxAge: ONE_YEAR_MS,
+          });
+
+          await db.touchUserLastSignedIn(user!.id);
+          return user;
+        }
+
+        // New user
+        const hash = await bcrypt.hash(input.password, 10);
+        const user = await db.createUser({
+          name: input.name.trim(),
+          email,
+          passwordHash: hash,
+        });
+
+        if (!user) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Erro ao criar usuário" });
+        }
+
+        const label = user.displayName || user.name || `User ${user.id}`;
+        const token = await createLocalSessionToken({
+          openId: user.openId,
+          name: label,
+          userId: user.id,
+        });
+
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.cookie(COOKIE_NAME, token, {
+          ...cookieOptions,
+          maxAge: ONE_YEAR_MS,
+        });
+
+        await db.touchUserLastSignedIn(user.id);
+        return user;
+      }),
+    firstAccess: publicProcedure
+      .input(z.object({
+        email: z.string().email("Email inválido"),
+        password: z.string().min(6, "Senha deve ter no mínimo 6 caracteres"),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const email = input.email.toLowerCase().trim();
+        const user = await db.getUserByEmail(email);
+        if (!user) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Email não encontrado. Crie uma conta primeiro." });
+        }
+
+        if (user.passwordHash) {
+          throw new TRPCError({ code: "CONFLICT", message: "Este usuário já possui senha. Faça login." });
+        }
+
+        const hash = await bcrypt.hash(input.password, 10);
+        await db.updatePassword(user.id, hash);
 
         const label = user.displayName || user.name || `User ${user.id}`;
         const token = await createLocalSessionToken({

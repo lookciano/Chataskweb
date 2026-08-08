@@ -6,6 +6,9 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 
 const ChatApp = lazy(() => import("./pages/ChatApp"));
+const LoginPage = lazy(() => import("./pages/LoginPage"));
+const RegisterPage = lazy(() => import("./pages/RegisterPage"));
+const FirstAccessPage = lazy(() => import("./pages/FirstAccessPage"));
 const Home = lazy(() => import("./pages/Home"));
 const ProductivityReport = lazy(() => import("./pages/ProductivityReport"));
 const PerformanceDashboard = lazy(() => import("./pages/PerformanceDashboard"));
@@ -16,7 +19,7 @@ const CleanupNames = lazy(() =>
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 function LazyRoute({
- component: Component,
+  component: Component,
 }: {
   component: ComponentType<any>;
 }) {
@@ -39,6 +42,15 @@ function LazyRoute({
 function Router() {
   return (
     <Switch>
+      <Route path="/login">
+        <LazyRoute component={LoginPage} />
+      </Route>
+      <Route path="/register">
+        <LazyRoute component={RegisterPage} />
+      </Route>
+      <Route path="/first-access">
+        <LazyRoute component={FirstAccessPage} />
+      </Route>
       <Route path="/convite/:token">
         <LazyRoute component={AcceptInvite} />
       </Route>

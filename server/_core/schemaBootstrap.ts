@@ -22,6 +22,8 @@ export async function ensureProductionSchema(connection: Connection): Promise<vo
     `ALTER TABLE messages ADD COLUMN IF NOT EXISTS replyToId INT NULL`,
     // Room invite password (optional legacy)
     `ALTER TABLE chatRooms ADD COLUMN IF NOT EXISTS invitePassword VARCHAR(255) NULL`,
+    // Auth — password_hash for email+password login (NULL for existing users, set on first access)
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS passwordHash VARCHAR(255) NULL`,
     // Thumbs-up / joinha reactions (new table — no impact on existing rows)
     `CREATE TABLE IF NOT EXISTS messageReactions (
       id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,

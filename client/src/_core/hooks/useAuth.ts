@@ -27,6 +27,27 @@ export function useAuth(options?: UseAuthOptions) {
     },
   });
 
+  const loginMutation = trpc.auth.login.useMutation({
+    onSuccess: async (user) => {
+      utils.auth.me.setData(undefined, user);
+      await utils.auth.me.invalidate();
+    },
+  });
+
+  const registerMutation = trpc.auth.register.useMutation({
+    onSuccess: async (user) => {
+      utils.auth.me.setData(undefined, user);
+      await utils.auth.me.invalidate();
+    },
+  });
+
+  const firstAccessMutation = trpc.auth.firstAccess.useMutation({
+    onSuccess: async (user) => {
+      utils.auth.me.setData(undefined, user);
+      await utils.auth.me.invalidate();
+    },
+  });
+
   const logoutMutation = trpc.auth.logout.useMutation({
     onSuccess: () => {
       utils.auth.me.setData(undefined, null);
@@ -38,6 +59,27 @@ export function useAuth(options?: UseAuthOptions) {
       return selectIdentityMutation.mutateAsync({ userId });
     },
     [selectIdentityMutation]
+  );
+
+  const login = useCallback(
+    async (email: string, password: string) => {
+      return loginMutation.mutateAsync({ email, password });
+    },
+    [loginMutation]
+  );
+
+  const register = useCallback(
+    async (name: string, email: string, password: string) => {
+      return registerMutation.mutateAsync({ name, email, password });
+    },
+    [registerMutation]
+  );
+
+  const firstAccess = useCallback(
+    async (email: string, password: string) => {
+      return firstAccessMutation.mutateAsync({ email, password });
+    },
+    [firstAccessMutation]
   );
 
   const logout = useCallback(async () => {
@@ -59,8 +101,18 @@ export function useAuth(options?: UseAuthOptions) {
         meQuery.isLoading ||
         identitiesQuery.isLoading ||
         logoutMutation.isPending ||
-        selectIdentityMutation.isPending,
-      error: meQuery.error ?? logoutMutation.error ?? selectIdentityMutation.error ?? null,
+        selectIdentityMutation.isPending ||
+        loginMutation.isPending ||
+        registerMutation.isPending ||
+        firstAccessMutation.isPending,
+      error:
+        meQuery.error ??
+        logoutMutation.error ??
+        selectIdentityMutation.error ??
+        loginMutation.error ??
+        registerMutation.error ??
+        firstAccessMutation.error ??
+        null,
       isAuthenticated: Boolean(user),
       identities: identitiesQuery.data ?? [],
       needsIdentity: !meQuery.isLoading && !user,
@@ -75,6 +127,12 @@ export function useAuth(options?: UseAuthOptions) {
     logoutMutation.isPending,
     selectIdentityMutation.error,
     selectIdentityMutation.isPending,
+    loginMutation.error,
+    loginMutation.isPending,
+    registerMutation.error,
+    registerMutation.isPending,
+    firstAccessMutation.error,
+    firstAccessMutation.isPending,
   ]);
 
   return {
@@ -83,5 +141,8 @@ export function useAuth(options?: UseAuthOptions) {
     logout,
     selectIdentity,
     selecting: selectIdentityMutation.isPending,
+    login,
+    register,
+    firstAccess,
   };
 }
