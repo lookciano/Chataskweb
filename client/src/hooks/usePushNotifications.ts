@@ -48,7 +48,8 @@ export function usePushNotifications() {
           console.log("[Push] Token FCM recebido:", token.value.substring(0, 20) + "...");
 
           // Enviar token para o backend
-          registerMutation.mutate({ token: token.value, platform: "android" });
+          const platform = Capacitor.getPlatform() === "ios" ? "ios" : "android";
+          registerMutation.mutate({ token: token.value, platform });
         });
 
         // Escutar notificações recebidas com app aberto
