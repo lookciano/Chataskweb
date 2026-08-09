@@ -1901,7 +1901,7 @@ export default function ChatApp() {
   // MOBILE VIEW
   if (isMobile) {
     return (
-      <div className="h-screen flex flex-col bg-gradient-to-br from-slate-50 to-slate-100">
+      <div className="h-[100dvh] flex flex-col bg-gradient-to-br from-slate-50 to-slate-100">
         {/* Header */}
         <div className="bg-white border-b border-slate-200 p-4 flex items-center justify-between">
           {mobileView === "chat" && (
@@ -2338,7 +2338,7 @@ export default function ChatApp() {
               )}
 
               {/* Message Input - sticky above tab bar */}
-              <div className="border-t border-slate-200 bg-white p-3 flex-shrink-0 sticky bottom-0 z-10">
+              <div className="border-t border-slate-200 bg-white p-3 flex-shrink-0 sticky bottom-0 z-10 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
                 {replyingToId && (
                   <div className="mb-2 p-2.5 bg-slate-50 rounded-lg border border-slate-200 flex items-start justify-between">
                     <div className="flex-1 min-w-0">
@@ -2384,7 +2384,7 @@ export default function ChatApp() {
 
         {/* Mobile Bottom Navigation */}
         {isMobile && selectedRoom && (
-          <div className="border-t border-slate-200 bg-white flex gap-0 flex-shrink-0 pb-[env(safe-area-inset-bottom)]">
+          <div className="border-t border-slate-200 bg-white flex gap-0 flex-shrink-0 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
             <button
               onClick={() => setMobileView("chat")}
               className={`flex-1 py-2.5 px-3 text-center text-xs font-medium transition-colors ${
