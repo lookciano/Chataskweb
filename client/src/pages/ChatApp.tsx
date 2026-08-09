@@ -74,6 +74,7 @@ interface Participant {
 
 export default function ChatApp() {
   const { user, loading, identities, needsIdentity, selectIdentity, selecting, logout, isAuthenticated } = useAuth();
+  const [, setLocation] = useLocation();
   const isPlatformAdmin = user?.role === "admin";
   const { notifyNewMessage, setLastMessageCount } = useMessageNotifications();
   usePushNotifications();
@@ -751,6 +752,13 @@ export default function ChatApp() {
 
     return () => clearInterval(interval);
   }, [selectedRoom, utils, messagesQuery, tasksQuery, participantsQuery]);
+
+  // If not authenticated, redirect to login
+  useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      setLocation("/login");
+    }
+  }, [loading, isAuthenticated]);
 
   // Sincronizar displayName do usuário ao carregar
   useEffect(() => {
@@ -1866,66 +1874,26 @@ export default function ChatApp() {
     );
   }
 
-  // Platform admins bootstrap here. Other members enter only via room invite link.
-  if (needsIdentity || !isAuthenticated || !user) {
+  // If loading, show a spinner
+  if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-teal-50 flex items-center justify-center p-4">
-        <Card className="w-full max-w-xl p-6 shadow-lg border-slate-200">
-          <div className="mb-6 text-center">
-            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-teal-100 text-teal-700">
-              <Users className="h-6 w-6" />
-            </div>
-            <h1 className="text-2xl font-semibold text-slate-900">Acesso administrador</h1>
-            <p className="mt-2 text-sm text-slate-600">
-              Somente administradores da plataforma entram por esta tela.
-              Os demais membros usam o <span className="font-medium">link de convite</span> da sala.
-            </p>
-          </div>
+        <div className="text-center">
+          <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-2 border-teal-200 border-t-teal-700" />
+          <p className="text-sm text-slate-500">Carregando...</p>
+        </div>
+      </div>
+    );
+  }
 
-          <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
-            {identities.length === 0 ? (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                Nenhum administrador disponível. Se você é membro de uma sala, abra o link de
-                convite que recebeu.
-              </div>
-            ) : (
-              identities.map((identity: {
-                id: number;
-                displayName?: string | null;
-                name?: string | null;
-                email?: string | null;
-                role?: string | null;
-              }) => (
-                <button
-                  key={identity.id}
-                  type="button"
-                  disabled={selecting}
-                  onClick={() => handleSelectIdentity(identity.id)}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-teal-400 hover:bg-teal-50 disabled:opacity-60"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-sm font-semibold text-white">
-                      {(identity.displayName || identity.name || "U").slice(0, 1).toUpperCase()}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="truncate font-medium text-slate-900">
-                        {identity.displayName || identity.name}
-                      </p>
-                      <p className="truncate text-xs text-slate-500">
-                        {identity.email || `ID ${identity.id}`}
-                        {identity.role === "admin" ? " · admin" : ""}
-                      </p>
-                    </div>
-                  </div>
-                </button>
-              ))
-            )}
-          </div>
-
-          {selecting && (
-            <p className="mt-4 text-center text-sm text-slate-500">Entrando...</p>
-          )}
-        </Card>
+  // Not authenticated — redirect to login
+  if (!isAuthenticated || !user) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-teal-50 flex items-center justify-center p-4">
+        <div className="text-center">
+          <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-2 border-teal-200 border-t-teal-700" />
+          <p className="text-sm text-slate-500">Redirecionando para login...</p>
+        </div>
       </div>
     );
   }
