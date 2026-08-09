@@ -85,6 +85,19 @@ export async function sendPushNotificationForMessage(
           color: "#0f766e",
         },
       },
+      apns: {
+        payload: {
+          aps: {
+            alert: {
+              title: `${senderName} · ${roomName}`,
+              body: preview,
+            },
+            sound: "default",
+            badge: 1,
+            "mutable-content": 1,
+          } as any,
+        },
+      },
     };
 
     const messaging = getMessaging();
