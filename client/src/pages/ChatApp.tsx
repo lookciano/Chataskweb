@@ -1901,7 +1901,7 @@ export default function ChatApp() {
   // MOBILE VIEW
   if (isMobile) {
     return (
-      <div className="h-[100dvh] flex flex-col bg-gradient-to-br from-slate-50 to-slate-100">
+      <div className="h-[100dvh] flex flex-col bg-gradient-to-br from-slate-50 to-slate-100 pt-[env(safe-area-inset-top)]">
         {/* Header */}
         <div className="bg-white border-b border-slate-200 p-4 flex items-center justify-between">
           {mobileView === "chat" && (
