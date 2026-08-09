@@ -2384,10 +2384,10 @@ export default function ChatApp() {
 
         {/* Mobile Bottom Navigation */}
         {isMobile && selectedRoom && (
-          <div className="border-t border-slate-200 bg-white flex gap-0 flex-shrink-0 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+          <div className="border-t border-slate-200 bg-white flex gap-0 flex-shrink-0 pb-[env(safe-area-inset-bottom)]">
             <button
               onClick={() => setMobileView("chat")}
-              className={`flex-1 py-1.5 px-2 text-center text-xs font-medium transition-colors ${
+              className={`flex-1 py-1 px-1 text-center text-xs font-medium transition-colors ${
                 mobileView === "chat"
                   ? "text-teal-600 border-t-2 border-teal-600"
                   : "text-slate-500 hover:text-slate-800 hover:bg-slate-50"
@@ -2398,7 +2398,7 @@ export default function ChatApp() {
             </button>
             <button
               onClick={() => setMobileView("tasks")}
-              className={`flex-1 py-1.5 px-2 text-center text-xs font-medium transition-colors ${
+              className={`flex-1 py-1 px-1 text-center text-xs font-medium transition-colors ${
                 mobileView === "tasks"
                   ? "text-teal-600 border-t-2 border-teal-600"
                   : "text-slate-500 hover:text-slate-800 hover:bg-slate-50"
@@ -2409,7 +2409,7 @@ export default function ChatApp() {
             </button>
             <button
               onClick={() => setMobileView("myTasks")}
-              className={`flex-1 py-1.5 px-2 text-center text-xs font-medium transition-colors ${
+              className={`flex-1 py-1 px-1 text-center text-xs font-medium transition-colors ${
                 mobileView === "myTasks"
                   ? "text-teal-600 border-t-2 border-teal-600"
                   : "text-slate-500 hover:text-slate-800 hover:bg-slate-50"
@@ -2420,7 +2420,7 @@ export default function ChatApp() {
             </button>
             <button
               onClick={() => setMobileView("rooms")}
-              className={`flex-1 py-1.5 px-2 text-center text-xs font-medium transition-colors ${
+              className={`flex-1 py-1 px-1 text-center text-xs font-medium transition-colors ${
                 mobileView === "rooms"
                   ? "text-teal-600 border-t-2 border-teal-600"
                   : "text-slate-500 hover:text-slate-800 hover:bg-slate-50"
