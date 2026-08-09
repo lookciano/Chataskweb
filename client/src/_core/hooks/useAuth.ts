@@ -30,21 +30,18 @@ export function useAuth(options?: UseAuthOptions) {
   const loginMutation = trpc.auth.login.useMutation({
     onSuccess: async (user) => {
       utils.auth.me.setData(undefined, user);
-      await utils.auth.me.invalidate();
     },
   });
 
   const registerMutation = trpc.auth.register.useMutation({
     onSuccess: async (user) => {
       utils.auth.me.setData(undefined, user);
-      await utils.auth.me.invalidate();
     },
   });
 
   const firstAccessMutation = trpc.auth.firstAccess.useMutation({
     onSuccess: async (user) => {
       utils.auth.me.setData(undefined, user);
-      await utils.auth.me.invalidate();
     },
   });
 
