@@ -23,6 +23,9 @@ export function usePushNotifications() {
 
     if (!isNative) return;
 
+    // Limpa badges e notificações entregues ao abrir o app
+    PushNotifications.removeAllDeliveredNotifications().catch(() => {});
+
     let mounted = true;
 
     const setupPush = async () => {
