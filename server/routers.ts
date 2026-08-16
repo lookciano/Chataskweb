@@ -58,6 +58,73 @@ async function assertCanManageRoom(
 
 export const appRouter = router({
   system: systemRouter,
+  personalTasks: router({
+    list: protectedProcedure
+      .input(z.object({ status: z.string().optional() }))
+      .query(async ({ input, ctx }) => {
+        return await db.getPersonalTasksByUser(ctx.user.id, input.status);
+      }),
+    create: protectedProcedure
+      .input(z.object({
+        description: z.string().min(1).max(8000),
+        priority: z.enum(["low", "medium", "high"]).default("medium"),
+        dueDate: z.string().nullable().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        let dueDate: Date | null = null;
+        if (input.dueDate) {
+          const parsed = new Date(input.dueDate);
+          if (!isNaN(parsed.getTime())) dueDate = parsed;
+        }
+        return await db.createPersonalTask({
+          userId: ctx.user.id,
+          description: input.description,
+          priority: input.priority,
+          dueDate,
+          status: "pending",
+        });
+      }),
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        description: z.string().min(1).max(8000).optional(),
+        priority: z.enum(["low", "medium", "high"]).optional(),
+        dueDate: z.string().nullable().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        let dueDate: Date | null | undefined = undefined;
+        if (input.dueDate !== undefined) {
+          const parsed = input.dueDate ? new Date(input.dueDate) : null;
+          dueDate = input.dueDate && !isNaN((parsed as Date).getTime()) ? parsed : null;
+        }
+        return await db.updatePersonalTask(ctx.user.id ? input.id : input.id, ctx.user.id, {
+          description: input.description,
+          priority: input.priority,
+          dueDate,
+        });
+      }),
+    updateStatus: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        status: z.enum(["pending", "completed", "cancelled"]),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const task = await db.getPersonalTaskById(input.id);
+        if (!task || task.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Tarefa não encontrada" });
+        }
+        return await db.updatePersonalTaskStatus(input.id, ctx.user.id, input.status);
+      }),
+    remove: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const task = await db.getPersonalTaskById(input.id);
+        if (!task || task.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Tarefa não encontrada" });
+        }
+        return await db.deletePersonalTask(input.id, ctx.user.id);
+      }),
+  }),
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
     /**

@@ -63,6 +63,18 @@ interface Task {
   roomName?: string | null;
 }
 
+interface PersonalTask {
+  id: number;
+  userId: number;
+  description: string;
+  priority: "low" | "medium" | "high";
+  status: "pending" | "completed" | "cancelled";
+  dueDate?: Date | null;
+  createdAt: Date;
+  completedAt?: Date | null;
+  updatedAt?: Date;
+}
+
 interface Participant {
   id: number;
   userId: number;
@@ -105,6 +117,11 @@ export default function ChatApp() {
   const autoScrollOnNextMessageRef = useRef(false);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [myTasks, setMyTasks] = useState<Task[]>([]);
+  const [personalTasks, setPersonalTasks] = useState<PersonalTask[]>([]);
+  const [showNewPersonalTask, setShowNewPersonalTask] = useState(false);
+  const [personalTaskDescription, setPersonalTaskDescription] = useState("");
+  const [personalTaskPriority, setPersonalTaskPriority] = useState<"low" | "medium" | "high">("medium");
+  const [personalTaskDueDate, setPersonalTaskDueDate] = useState("");
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [replyingToId, setReplyingToId] = useState<number | null>(null);
   const [replyingToContent, setReplyingToContent] = useState<string>("");
@@ -112,7 +129,7 @@ export default function ChatApp() {
   const [showMyTasks, setShowMyTasks] = useState(false);
   const [displayName, setDisplayName] = useState(user?.displayName || user?.name || "");
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
-  const [mobileView, setMobileView] = useState<"chat" | "rooms" | "participants" | "tasks" | "myTasks">("chat");
+  const [mobileView, setMobileView] = useState<"chat" | "rooms" | "participants" | "tasks" | "myTasks">("rooms");
   const [showParticipantsModal, setShowParticipantsModal] = useState(false);
   const [memberToAddId, setMemberToAddId] = useState<string>("");
   const [hasUnreadBelow, setHasUnreadBelow] = useState(false);
@@ -164,6 +181,14 @@ export default function ChatApp() {
     { enabled: !!selectedRoom && !!user }
   );
   const myTasksQuery = trpc.tasks.myTasks.useQuery(
+    { status: undefined },
+    {
+      enabled: !!user && (showMyTasks || (isMobile && mobileView === "myTasks")),
+      refetchOnWindowFocus: false,
+      staleTime: 10_000,
+    }
+  );
+  const personalTasksQuery = trpc.personalTasks.list.useQuery(
     { status: undefined },
     {
       enabled: !!user && (showMyTasks || (isMobile && mobileView === "myTasks")),
@@ -262,6 +287,26 @@ export default function ChatApp() {
     onError: (error) => toast.error(error.message || "Falha ao revogar"),
   });
   const updateTaskMutation = trpc.tasks.updateStatus.useMutation();
+  const createPersonalTaskMutation = trpc.personalTasks.create.useMutation({
+    onSuccess: async () => {
+      await personalTasksQuery.refetch();
+      toast.success("Tarefa pessoal criada", { duration: 3000 });
+    },
+    onError: (err) => toast.error(err.message || "Erro ao criar tarefa pessoal"),
+  });
+  const updatePersonalTaskStatusMutation = trpc.personalTasks.updateStatus.useMutation({
+    onSuccess: async () => {
+      await personalTasksQuery.refetch();
+    },
+    onError: (err) => toast.error(err.message || "Erro ao atualizar tarefa"),
+  });
+  const deletePersonalTaskMutation = trpc.personalTasks.remove.useMutation({
+    onSuccess: async () => {
+      await personalTasksQuery.refetch();
+      toast.success("Tarefa pessoal excluída", { duration: 3000 });
+    },
+    onError: (err) => toast.error(err.message || "Erro ao excluir tarefa"),
+  });
   const deleteTaskMutation = trpc.tasks.deleteTask.useMutation({
     onSuccess: async () => {
       await utils.tasks.list.invalidate();
@@ -389,16 +434,6 @@ export default function ChatApp() {
     return () => window.removeEventListener("push-notification-click", handlePushClick);
   }, [isMobile]);
 
-  // Initialize first room
-  useEffect(() => {
-    if (roomsQuery.data && roomsQuery.data.length > 0 && !selectedRoom) {
-      setSelectedRoom(roomsQuery.data[0].id);
-      if (isMobile) {
-        setMobileView("chat");
-      }
-    }
-  }, [roomsQuery.data, selectedRoom, isMobile]);
-
   // WhatsApp-style: opening a room clears unread for current user
   useEffect(() => {
     if (!user?.id || !selectedRoom) return;
@@ -504,6 +539,21 @@ export default function ChatApp() {
       );
     }
   }, [myTasksQuery.data]);
+
+  // Update personal tasks when query changes
+  useEffect(() => {
+    if (personalTasksQuery.data) {
+      setPersonalTasks(
+        (personalTasksQuery.data as any[]).map((task) => ({
+          ...task,
+          createdAt: new Date(task.createdAt),
+          completedAt: task.completedAt ? new Date(task.completedAt) : null,
+          updatedAt: task.updatedAt ? new Date(task.updatedAt) : undefined,
+          dueDate: task.dueDate ? new Date(task.dueDate) : undefined,
+        }))
+      );
+    }
+  }, [personalTasksQuery.data]);
 
   // Update participants
   useEffect(() => {
@@ -1107,6 +1157,182 @@ export default function ChatApp() {
     }
   };
 
+  // --- Tarefas pessoais ---
+  const handleCreatePersonalTask = async () => {
+    if (!personalTaskDescription.trim()) {
+      toast.error("Descreva a tarefa pessoal");
+      return;
+    }
+    try {
+      await createPersonalTaskMutation.mutateAsync({
+        description: personalTaskDescription.trim(),
+        priority: personalTaskPriority,
+        dueDate: personalTaskDueDate || null,
+      });
+      setShowNewPersonalTask(false);
+      setPersonalTaskDescription("");
+      setPersonalTaskPriority("medium");
+      setPersonalTaskDueDate("");
+    } catch (error) {}
+  };
+
+  const handleTogglePersonalTask = async (taskId: number, currentStatus: string) => {
+    const newStatus = currentStatus === "completed" ? "pending" : "completed";
+    try {
+      await updatePersonalTaskStatusMutation.mutateAsync({ id: taskId, status: newStatus as any });
+    } catch (error) {}
+  };
+
+  const handleDeletePersonalTask = async (taskId: number) => {
+    if (!confirm("Excluir esta tarefa pessoal?")) return;
+    try {
+      await deletePersonalTaskMutation.mutateAsync({ id: taskId });
+    } catch (error) {}
+  };
+
+  const priorityLabel = (p: string) =>
+    p === "high" ? "Alta" : p === "low" ? "Baixa" : "Média";
+  const priorityClass = (p: string) =>
+    p === "high" ? "bg-red-100 text-red-700" : p === "low" ? "bg-slate-100 text-slate-600" : "bg-amber-100 text-amber-700";
+
+  /** Renderiza a lista de tarefas pessoais (status pendente/concluída) com botão de nova. */
+  const renderPersonalTasksSection = (statusFilter: "pending" | "completed") => {
+    const list = personalTasks
+      .filter((t) => (statusFilter === "completed" ? t.status === "completed" : t.status !== "completed"))
+      .sort((a, b) => {
+        const at = (a.dueDate ?? a.createdAt).getTime();
+        const bt = (b.dueDate ?? b.createdAt).getTime();
+        return at - bt;
+      });
+
+    return (
+      <div className="space-y-2 mb-2">
+        <div className="flex items-center justify-between px-1 py-1.5 sticky top-0 bg-white z-10">
+          <div className="flex items-center gap-2">
+            <ListTodo className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+            <span className="text-xs font-semibold text-slate-700">Tarefas Pessoais</span>
+            <span className="text-[10px] text-slate-400 shrink-0">({list.length})</span>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            className="h-7 px-2 bg-teal-600 hover:bg-teal-700 text-white shadow-none text-xs"
+            onClick={() => setShowNewPersonalTask(true)}
+          >
+            <Plus className="w-3.5 h-3.5 mr-1" /> Nova
+          </Button>
+        </div>
+        {list.length === 0 ? (
+          <p className="text-center text-slate-400 py-4 text-sm">Nenhuma tarefa pessoal {statusFilter === "completed" ? "concluída" : "pendente"}</p>
+        ) : (
+          list.map((task) => (
+            <Card key={task.id} className={`p-3 border border-slate-200 shadow-none ${task.status === "completed" ? "opacity-70" : ""}`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <p className={`text-sm font-medium text-slate-900 break-words whitespace-pre-wrap ${task.status === "completed" ? "line-through" : ""}`}>
+                    {task.description}
+                  </p>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] leading-4 text-slate-500">
+                    <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${priorityClass(task.priority)}`}>
+                      {priorityLabel(task.priority)}
+                    </span>
+                    {task.dueDate && (
+                      <span className="inline-flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-slate-400" />
+                        <span className="font-medium text-slate-600 tabular-nums">{formatTaskDate(task.dueDate)}</span>
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={task.status === "completed"}
+                    onChange={() => handleTogglePersonalTask(task.id, task.status)}
+                    className="w-4 h-4 rounded border-slate-300"
+                    title={task.status === "completed" ? "Reabrir tarefa" : "Concluir tarefa"}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleDeletePersonalTask(task.id)}
+                    className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    title="Excluir"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            </Card>
+          ))
+        )}
+      </div>
+    );
+  };
+
+
+  /** Modal reutilizável (mobile + desktop) para criar tarefa pessoal. */
+  const newPersonalTaskDialog = (
+    <Dialog open={showNewPersonalTask} onOpenChange={setShowNewPersonalTask}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ListTodo className="w-5 h-5 text-teal-600" /> Nova tarefa pessoal
+          </DialogTitle>
+          <DialogDescription>
+            Crie uma tarefa só sua, fora das salas.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-slate-700">Descrição</label>
+            <Textarea
+              value={personalTaskDescription}
+              onChange={(e) => setPersonalTaskDescription(e.target.value)}
+              placeholder="O que precisa fazer?"
+              className="min-h-24 text-sm"
+              autoFocus
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-slate-700">Importância</label>
+            <select
+              value={personalTaskPriority}
+              onChange={(e) => setPersonalTaskPriority(e.target.value as any)}
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white hover:bg-slate-50"
+            >
+              <option value="high">🔴 Alta</option>
+              <option value="medium">🟡 Média</option>
+              <option value="low">⚪ Baixa</option>
+            </select>
+          </div>
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-slate-700">Data para realizar</label>
+            <Input
+              type="date"
+              value={personalTaskDueDate}
+              onChange={(e) => setPersonalTaskDueDate(e.target.value)}
+              className="w-full"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => setShowNewPersonalTask(false)}
+          >
+            Cancelar
+          </Button>
+          <Button
+            className="bg-teal-600 hover:bg-teal-700 text-white shadow-none"
+            disabled={createPersonalTaskMutation.isPending || !personalTaskDescription.trim()}
+            onClick={handleCreatePersonalTask}
+          >
+            {createPersonalTaskMutation.isPending ? "Criando…" : "Criar tarefa"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 
   type ThumbsSummary = {
     messageId: number;
@@ -1395,12 +1621,29 @@ export default function ChatApp() {
   const renderMyTasksContent = () => {
     const filtered = getFilteredMyTasks(myTasks);
     const grouped = groupMyTasksByRoom(filtered);
+    const hasRoomTasks = myTasks.length > 0;
 
-    if (myTasksQuery.isLoading && myTasks.length === 0) {
+    if ((myTasksQuery.isLoading || personalTasksQuery.isLoading) && myTasks.length === 0 && personalTasks.length === 0) {
       return <p className="text-center text-slate-400 py-8">Carregando suas tarefas…</p>;
     }
-    if (myTasks.length === 0) {
-      return <p className="text-center text-slate-400 py-8">Nenhuma tarefa atribuída a você</p>;
+    if (myTasks.length === 0 && personalTasks.length === 0) {
+      return (
+        <div className="space-y-4">
+          <Tabs defaultValue="pending" className="w-full">
+            <TabsList className="grid w-full grid-cols-2 mb-4">
+              <TabsTrigger value="pending">Pendentes</TabsTrigger>
+              <TabsTrigger value="completed">Concluídas</TabsTrigger>
+            </TabsList>
+            <TabsContent value="pending" className="space-y-4">
+              {renderPersonalTasksSection("pending")}
+              {!hasRoomTasks && <p className="text-center text-slate-400 py-6">Nenhuma tarefa atribuída a você nas salas</p>}
+            </TabsContent>
+            <TabsContent value="completed" className="space-y-4">
+              {renderPersonalTasksSection("completed")}
+            </TabsContent>
+          </Tabs>
+        </div>
+      );
     }
 
     return (
@@ -1413,6 +1656,7 @@ export default function ChatApp() {
 
           {/* Pendentes */}
           <TabsContent value="pending" className="space-y-4">
+            {renderPersonalTasksSection("pending")}
             {grouped.filter(g => g.tasks.some(t => t.status !== "completed")).length === 0 ? (
               <p className="text-center text-slate-400 py-8">Nenhuma tarefa pendente</p>
             ) : (
@@ -1461,6 +1705,7 @@ export default function ChatApp() {
 
           {/* Concluídas */}
           <TabsContent value="completed" className="space-y-4">
+            {renderPersonalTasksSection("completed")}
             {grouped.filter(g => g.tasks.some(t => t.status === "completed")).length === 0 ? (
               <p className="text-center text-slate-400 py-8">Nenhuma tarefa concluída</p>
             ) : (
@@ -2752,6 +2997,7 @@ export default function ChatApp() {
             </Card>
           </div>
         )}
+        {newPersonalTaskDialog}
       </div>
     );
   }
@@ -3670,6 +3916,7 @@ export default function ChatApp() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {newPersonalTaskDialog}
     </div>
   );
 }

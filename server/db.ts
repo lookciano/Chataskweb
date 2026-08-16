@@ -13,10 +13,12 @@ import {
   roomInvites,
   roomReadState,
   deviceTokens,
+  personalTasks,
   InsertChatRoom,
   InsertMessage,
   InsertTask,
   InsertChatRoomParticipant,
+  InsertPersonalTask,
   User,
 } from "../drizzle/schema";
 import { randomBytes } from "crypto";
@@ -1706,4 +1708,71 @@ export async function removeDeviceTokensByToken(tokens: string[]) {
     .where(inArray(deviceTokens.token, tokens));
   const affectedRows = Array.isArray(res) ? res[0]?.affectedRows ?? 0 : res?.affectedRows ?? 0;
   return affectedRows;
+}
+
+/* ===== Personal tasks (tarefas pessoais fora de salas) ===== */
+
+export async function createPersonalTask(input: InsertPersonalTask) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(personalTasks).values(input);
+  const insertId = Number(result[0]?.insertId);
+  return getPersonalTaskById(insertId);
+}
+
+export async function getPersonalTaskById(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rows = await db.select().from(personalTasks).where(eq(personalTasks.id, id));
+  return rows[0] || null;
+}
+
+export async function getPersonalTasksByUser(userId: number, status?: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const base = db.select().from(personalTasks).where(eq(personalTasks.userId, userId));
+  if (status) {
+    return await base.where(eq(personalTasks.status, status as any)).orderBy(asc(personalTasks.dueDate));
+  }
+  return await base.orderBy(asc(personalTasks.dueDate));
+}
+
+export async function updatePersonalTask(
+  id: number,
+  userId: number,
+  changes: { description?: string; priority?: string; dueDate?: Date | null }
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const update: any = {
+    updatedAt: new Date(),
+  };
+  if (changes.description !== undefined) update.description = changes.description;
+  if (changes.priority !== undefined) update.priority = changes.priority as any;
+  if (changes.dueDate !== undefined) update.dueDate = changes.dueDate;
+  await db
+    .update(personalTasks)
+    .set(update)
+    .where(and(eq(personalTasks.id, id), eq(personalTasks.userId, userId)));
+  return getPersonalTaskById(id);
+}
+
+export async function updatePersonalTaskStatus(id: number, userId: number, status: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const completedAt = status === "completed" ? new Date() : null;
+  await db
+    .update(personalTasks)
+    .set({ status: status as any, completedAt })
+    .where(and(eq(personalTasks.id, id), eq(personalTasks.userId, userId)));
+  return getPersonalTaskById(id);
+}
+
+export async function deletePersonalTask(id: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .delete(personalTasks)
+    .where(and(eq(personalTasks.id, id), eq(personalTasks.userId, userId)));
+  return { success: true };
 }

@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, uniqueIndex } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, uniqueIndex, index } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -170,3 +170,27 @@ export const deviceTokens = mysqlTable(
 
 export type DeviceToken = typeof deviceTokens.$inferSelect;
 export type InsertDeviceToken = typeof deviceTokens.$inferInsert;
+
+/**
+ * Personal tasks — tarefas individuais do usuário, criadas fora de qualquer sala.
+ * Aditivo: não interfere em `tasks` (de sala/chat). Cada tarefa pertence ao dono (userId).
+ */
+export const personalTasks = mysqlTable(
+  "personalTasks",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    /** Dono da tarefa pessoal. */
+    userId: int("userId").notNull(),
+    description: text("description").notNull(),
+    priority: mysqlEnum("priority", ["low", "medium", "high"]).default("medium").notNull(),
+    dueDate: timestamp("dueDate"),
+    status: mysqlEnum("status", ["pending", "completed", "cancelled"]).default("pending").notNull(),
+    completedAt: timestamp("completedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => [index("idx_personalTasks_user").on(table.userId)]
+);
+
+export type PersonalTask = typeof personalTasks.$inferSelect;
+export type InsertPersonalTask = typeof personalTasks.$inferInsert;

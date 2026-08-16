@@ -67,6 +67,19 @@ export async function ensureProductionSchema(connection: Connection): Promise<vo
       UNIQUE KEY uq_roomReadState_room_user (chatRoomId, userId),
       KEY idx_roomReadState_userId (userId)
     )`,
+    // Personal tasks — tarefas individuais fora de salas (ADDITIVE, não toca em tasks/chat)
+    `CREATE TABLE IF NOT EXISTS personalTasks (
+      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      userId INT NOT NULL,
+      description TEXT NOT NULL,
+      priority ENUM('low','medium','high') NOT NULL DEFAULT 'medium',
+      dueDate TIMESTAMP NULL,
+      status ENUM('pending','completed','cancelled') NOT NULL DEFAULT 'pending',
+      completedAt TIMESTAMP NULL,
+      createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      KEY idx_personalTasks_user (userId)
+    )`,
   ];
 
   for (const sql of statements) {
