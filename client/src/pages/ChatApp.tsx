@@ -122,6 +122,10 @@ export default function ChatApp() {
   const [personalTaskDescription, setPersonalTaskDescription] = useState("");
   const [personalTaskPriority, setPersonalTaskPriority] = useState<"low" | "medium" | "high">("medium");
   const [personalTaskDueDate, setPersonalTaskDueDate] = useState("");
+  const [editingPersonalTaskId, setEditingPersonalTaskId] = useState<number | null>(null);
+  const [editPersonalDescription, setEditPersonalDescription] = useState("");
+  const [editPersonalPriority, setEditPersonalPriority] = useState<"low" | "medium" | "high">("medium");
+  const [editPersonalDueDate, setEditPersonalDueDate] = useState("");
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [replyingToId, setReplyingToId] = useState<number | null>(null);
   const [replyingToContent, setReplyingToContent] = useState<string>("");
@@ -306,6 +310,13 @@ export default function ChatApp() {
       toast.success("Tarefa pessoal excluída", { duration: 3000 });
     },
     onError: (err) => toast.error(err.message || "Erro ao excluir tarefa"),
+  });
+  const updatePersonalTaskMutation = trpc.personalTasks.update.useMutation({
+    onSuccess: async () => {
+      await personalTasksQuery.refetch();
+      toast.success("Tarefa pessoal atualizada", { duration: 3000 });
+    },
+    onError: (err) => toast.error(err.message || "Erro ao atualizar tarefa"),
   });
   const deleteTaskMutation = trpc.tasks.deleteTask.useMutation({
     onSuccess: async () => {
@@ -1190,6 +1201,75 @@ export default function ChatApp() {
     } catch (error) {}
   };
 
+  const startEditPersonalTask = (task: PersonalTask) => {
+    setEditingPersonalTaskId(task.id);
+    setEditPersonalDescription(task.description);
+    setEditPersonalPriority(task.priority);
+    setEditPersonalDueDate(
+      task.dueDate
+        ? `${task.dueDate.getFullYear()}-${String(task.dueDate.getMonth() + 1).padStart(2, "0")}-${String(task.dueDate.getDate()).padStart(2, "0")}`
+        : ""
+    );
+  };
+
+  const cancelEditPersonalTask = () => {
+    setEditingPersonalTaskId(null);
+  };
+
+  const handleSaveEditPersonalTask = async (taskId: number) => {
+    if (!editPersonalDescription.trim()) {
+      toast.error("Descreva a tarefa pessoal");
+      return;
+    }
+    try {
+      await updatePersonalTaskMutation.mutateAsync({
+        id: taskId,
+        description: editPersonalDescription.trim(),
+        priority: editPersonalPriority,
+        dueDate: editPersonalDueDate || null,
+      });
+      setEditingPersonalTaskId(null);
+    } catch (error) {}
+  };
+
+  /** Menu de 3 pontinhos das tarefas pessoais — editar + excluir (mesmo padrão das tarefas de grupo). */
+  const personalTaskActionsMenu = (task: PersonalTask) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+          title="Mais ações"
+          aria-label="Mais ações da tarefa pessoal"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <MoreVertical className="w-4 h-4" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-44">
+        <DropdownMenuItem
+          onClick={(e) => {
+            e.stopPropagation();
+            startEditPersonalTask(task);
+          }}
+        >
+          <Edit2 className="w-4 h-4" />
+          Editar
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="text-red-600 focus:text-red-700 focus:bg-red-50"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleDeletePersonalTask(task.id);
+          }}
+        >
+          <Trash2 className="w-4 h-4" />
+          Excluir
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
   const priorityLabel = (p: string) =>
     p === "high" ? "Alta" : p === "low" ? "Baixa" : "Média";
   const priorityClass = (p: string) =>
@@ -1318,14 +1398,7 @@ export default function ChatApp() {
                       className="w-4 h-4 rounded border-slate-300"
                       title={task.status === "completed" ? "Reabrir tarefa" : "Concluir tarefa"}
                     />
-                    <button
-                      type="button"
-                      onClick={() => handleDeletePersonalTask(task.id)}
-                      className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                      title="Excluir"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    {personalTaskActionsMenu(task)}
                   </div>
                 </div>
               </Card>
@@ -1395,6 +1468,70 @@ export default function ChatApp() {
             onClick={handleCreatePersonalTask}
           >
             {createPersonalTaskMutation.isPending ? "Criando…" : "Criar tarefa"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
+  /** Modal reutilizável (mobile + desktop) para editar tarefa pessoal. */
+  const editPersonalTaskDialog = (
+    <Dialog open={editingPersonalTaskId !== null} onOpenChange={(open) => { if (!open) cancelEditPersonalTask(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Edit2 className="w-5 h-5 text-teal-600" /> Editar tarefa pessoal
+          </DialogTitle>
+          <DialogDescription>
+            Atualize a descrição, importância ou data.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-slate-700">Descrição</label>
+            <Textarea
+              value={editPersonalDescription}
+              onChange={(e) => setEditPersonalDescription(e.target.value)}
+              placeholder="O que precisa fazer?"
+              className="min-h-24 text-sm"
+              autoFocus
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-slate-700">Importância</label>
+            <select
+              value={editPersonalPriority}
+              onChange={(e) => setEditPersonalPriority(e.target.value as any)}
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white hover:bg-slate-50"
+            >
+              <option value="high">🔴 Alta</option>
+              <option value="medium">🟡 Média</option>
+              <option value="low">⚪ Baixa</option>
+            </select>
+          </div>
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-slate-700">Data para realizar</label>
+            <Input
+              type="date"
+              value={editPersonalDueDate}
+              onChange={(e) => setEditPersonalDueDate(e.target.value)}
+              className="w-full"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => cancelEditPersonalTask()}
+          >
+            Cancelar
+          </Button>
+          <Button
+            className="bg-teal-600 hover:bg-teal-700 text-white shadow-none"
+            disabled={updatePersonalTaskMutation.isPending || !editPersonalDescription.trim() || editingPersonalTaskId === null}
+            onClick={() => editingPersonalTaskId !== null && handleSaveEditPersonalTask(editingPersonalTaskId)}
+          >
+            {updatePersonalTaskMutation.isPending ? "Salvando…" : "Salvar"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -3081,6 +3218,7 @@ export default function ChatApp() {
           </div>
         )}
         {newPersonalTaskDialog}
+        {editPersonalTaskDialog}
       </div>
     );
   }
@@ -4000,6 +4138,7 @@ export default function ChatApp() {
         </DialogContent>
       </Dialog>
       {newPersonalTaskDialog}
+      {editPersonalTaskDialog}
     </div>
   );
 }
