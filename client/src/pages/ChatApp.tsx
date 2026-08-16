@@ -1195,15 +1195,55 @@ export default function ChatApp() {
   const priorityClass = (p: string) =>
     p === "high" ? "bg-red-100 text-red-700" : p === "low" ? "bg-slate-100 text-slate-600" : "bg-amber-100 text-amber-700";
 
+  /** Classifica uma tarefa pessoal pendente conforme o vencimento: hoje / atrasada / futura. */
+  const classifyPersonalDueDate = (task: PersonalTask): "today" | "overdue" | "future" | "none" => {
+    if (!task.dueDate) return "none";
+    const now = new Date();
+    const due = new Date(task.dueDate);
+    const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate()).getTime();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    if (dueDay === todayStart) return "today";
+    if (dueDay < todayStart) return "overdue";
+    return "future";
+  };
+
+  const priorityOrder = (p: string) => (p === "high" ? 0 : p === "medium" ? 1 : 2);
+
   /** Renderiza a lista de tarefas pessoais (status pendente/concluída) com botão de nova. */
   const renderPersonalTasksSection = (statusFilter: "pending" | "completed") => {
+    const isCompleted = statusFilter === "completed";
     const list = personalTasks
-      .filter((t) => (statusFilter === "completed" ? t.status === "completed" : t.status !== "completed"))
+      .filter((t) => (isCompleted ? t.status === "completed" : t.status !== "completed"))
       .sort((a, b) => {
+        if (isCompleted) {
+          const at = (a.completedAt ?? a.updatedAt ?? a.createdAt).getTime();
+          const bt = (b.completedAt ?? b.updatedAt ?? b.createdAt).getTime();
+          return bt - at;
+        }
+        // Pendentes: atrasadas primeiro, depois prioridade, depois vencimento
+        const dueClass = classifyPersonalDueDate(a) === "overdue" ? 0 : 1;
+        const dueClasb = classifyPersonalDueDate(b) === "overdue" ? 0 : 1;
+        if (dueClass !== dueClasb) return dueClass - dueClasb;
+        const pr = priorityOrder(a.priority) - priorityOrder(b.priority);
+        if (pr !== 0) return pr;
         const at = (a.dueDate ?? a.createdAt).getTime();
         const bt = (b.dueDate ?? b.createdAt).getTime();
         return at - bt;
       });
+
+    const overdueCount = isCompleted
+      ? 0
+      : list.filter((t) => classifyPersonalDueDate(t) === "overdue").length;
+
+    const cardClass = (task: PersonalTask) => {
+      if (task.status === "completed") return "p-3 border border-slate-200 shadow-none opacity-70";
+      const cls = classifyPersonalDueDate(task);
+      if (cls === "overdue")
+        return "p-3 border border-red-300 bg-red-50/60 shadow-none";
+      if (cls === "today")
+        return "p-3 border border-amber-300 bg-amber-50/60 shadow-none";
+      return "p-3 border border-slate-200 shadow-none";
+    };
 
     return (
       <div className="space-y-2 mb-2">
@@ -1212,6 +1252,11 @@ export default function ChatApp() {
             <ListTodo className="w-3.5 h-3.5 text-teal-600 shrink-0" />
             <span className="text-xs font-semibold text-slate-700">Tarefas Pessoais</span>
             <span className="text-[10px] text-slate-400 shrink-0">({list.length})</span>
+            {overdueCount > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
+                <Clock className="w-3 h-3" /> {overdueCount} atrasa{overdueCount === 1 ? "da" : "das"}
+              </span>
+            )}
           </div>
           <Button
             type="button"
@@ -1223,47 +1268,69 @@ export default function ChatApp() {
           </Button>
         </div>
         {list.length === 0 ? (
-          <p className="text-center text-slate-400 py-4 text-sm">Nenhuma tarefa pessoal {statusFilter === "completed" ? "concluída" : "pendente"}</p>
+          <p className="text-center text-slate-400 py-4 text-sm">Nenhuma tarefa pessoal {isCompleted ? "concluída" : "pendente"}</p>
         ) : (
-          list.map((task) => (
-            <Card key={task.id} className={`p-3 border border-slate-200 shadow-none ${task.status === "completed" ? "opacity-70" : ""}`}>
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex-1 min-w-0">
-                  <p className={`text-sm font-medium text-slate-900 break-words whitespace-pre-wrap ${task.status === "completed" ? "line-through" : ""}`}>
-                    {task.description}
-                  </p>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] leading-4 text-slate-500">
-                    <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${priorityClass(task.priority)}`}>
-                      {priorityLabel(task.priority)}
-                    </span>
-                    {task.dueDate && (
-                      <span className="inline-flex items-center gap-1">
-                        <Clock className="w-3 h-3 text-slate-400" />
-                        <span className="font-medium text-slate-600 tabular-nums">{formatTaskDate(task.dueDate)}</span>
+          list.map((task) => {
+            const dueCls = classifyPersonalDueDate(task);
+            const badge =
+              task.status === "completed"
+                ? null
+                : dueCls === "overdue"
+                  ? { label: "Atrasada", cls: "bg-red-600 text-white" }
+                  : dueCls === "today"
+                    ? { label: "Hoje", cls: "bg-amber-500 text-white" }
+                    : null;
+            return (
+              <Card key={task.id} className={cardClass(task)}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm font-medium text-slate-900 break-words whitespace-pre-wrap ${task.status === "completed" ? "line-through" : ""}`}>
+                      {task.description}
+                    </p>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] leading-4 text-slate-500">
+                      {badge && (
+                        <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${badge.cls}`}>
+                          {badge.label}
+                        </span>
+                      )}
+                      <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${priorityClass(task.priority)}`}>
+                        {priorityLabel(task.priority)}
                       </span>
-                    )}
+                      {task.dueDate && (
+                        <span className="inline-flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-slate-400" />
+                          <span className="font-medium text-slate-600 tabular-nums">{formatTaskDate(task.dueDate)}</span>
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] leading-4 text-slate-500">
+                      <span className="inline-flex items-center gap-1">
+                        <span className="text-slate-400">Criada</span>
+                        <span className="font-medium text-slate-600 tabular-nums">{formatTaskDate(task.createdAt)}</span>
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={task.status === "completed"}
+                      onChange={() => handleTogglePersonalTask(task.id, task.status)}
+                      className="w-4 h-4 rounded border-slate-300"
+                      title={task.status === "completed" ? "Reabrir tarefa" : "Concluir tarefa"}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleDeletePersonalTask(task.id)}
+                      className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Excluir"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <input
-                    type="checkbox"
-                    checked={task.status === "completed"}
-                    onChange={() => handleTogglePersonalTask(task.id, task.status)}
-                    className="w-4 h-4 rounded border-slate-300"
-                    title={task.status === "completed" ? "Reabrir tarefa" : "Concluir tarefa"}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => handleDeletePersonalTask(task.id)}
-                    className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                    title="Excluir"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            </Card>
-          ))
+              </Card>
+            );
+          })
         )}
       </div>
     );
