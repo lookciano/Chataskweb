@@ -2627,26 +2627,42 @@ export default function ChatApp() {
           </>
         )}
 
-        {/* Mobile Bottom Navigation */}
-        {isMobile && selectedRoom && (
+        {/* Mobile Bottom Navigation — sempre visível; Chat/Tarefas demandam sala selecionada */}
+        {isMobile && (
           <div className="border-t border-slate-200 bg-white flex gap-0 flex-shrink-0 pb-[env(safe-area-inset-bottom)]">
             <button
-              onClick={() => setMobileView("chat")}
+              onClick={() => {
+                if (!selectedRoom) {
+                  toast.message("Selecione uma sala para abrir o chat");
+                  return;
+                }
+                setMobileView("chat");
+              }}
               className={`flex-1 py-1 px-1 text-center text-xs font-medium transition-colors ${
                 mobileView === "chat"
                   ? "text-teal-600 border-t-2 border-teal-600"
-                  : "text-slate-500 hover:text-slate-800 hover:bg-slate-50"
+                  : !selectedRoom
+                    ? "text-slate-300 cursor-not-allowed"
+                    : "text-slate-500 hover:text-slate-800 hover:bg-slate-50"
               }`}
             >
               <MessageCircle className="w-5 h-5 mx-auto mb-0.5" />
               Chat
             </button>
             <button
-              onClick={() => setMobileView("tasks")}
+              onClick={() => {
+                if (!selectedRoom) {
+                  toast.message("Selecione uma sala para ver as tarefas");
+                  return;
+                }
+                setMobileView("tasks");
+              }}
               className={`flex-1 py-1 px-1 text-center text-xs font-medium transition-colors ${
                 mobileView === "tasks"
                   ? "text-teal-600 border-t-2 border-teal-600"
-                  : "text-slate-500 hover:text-slate-800 hover:bg-slate-50"
+                  : !selectedRoom
+                    ? "text-slate-300 cursor-not-allowed"
+                    : "text-slate-500 hover:text-slate-800 hover:bg-slate-50"
               }`}
             >
               <CheckCircle2 className="w-5 h-5 mx-auto mb-0.5" />
