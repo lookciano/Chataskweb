@@ -1681,3 +1681,29 @@ export async function getDeviceTokensForRoom(chatRoomId: number, excludeUserId: 
 
   return tokens;
 }
+
+/** Busca todos os device tokens registrados no sistema (para diagnóstico/limpeza). */
+export async function getAllDeviceTokens() {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return await db
+    .select({
+      id: deviceTokens.id,
+      userId: deviceTokens.userId,
+      token: deviceTokens.token,
+      platform: deviceTokens.platform,
+    })
+    .from(deviceTokens);
+}
+
+/** Remove device tokens que se tornaram inválidos (ex.: token de um projeto FCM antigo). */
+export async function removeDeviceTokensByToken(tokens: string[]) {
+  if (!tokens || tokens.length === 0) return 0;
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const res: any = await db
+    .delete(deviceTokens)
+    .where(inArray(deviceTokens.token, tokens));
+  const affectedRows = Array.isArray(res) ? res[0]?.affectedRows ?? 0 : res?.affectedRows ?? 0;
+  return affectedRows;
+}

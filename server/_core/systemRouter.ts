@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { notifyOwner } from "./notification";
+import { notifyOwner, testPushNotification, cleanupStaleTokens } from "./notification";
 import { adminProcedure, publicProcedure, router } from "./trpc";
 
 export const systemRouter = router({
@@ -12,6 +12,18 @@ export const systemRouter = router({
     .query(() => ({
       ok: true,
     })),
+
+  /** Dispara um push de teste real (vai para a sala 300038) e poda tokens mortos. */
+  testPush: adminProcedure
+    .mutation(async () => {
+      return await testPushNotification();
+    }),
+
+  /** Varre todos os device tokens, remove os órfãos/inválidos (ex.: projeto FCM antigo). */
+  cleanupTokens: adminProcedure
+    .mutation(async () => {
+      return await cleanupStaleTokens();
+    }),
 
   notifyOwner: adminProcedure
     .input(
