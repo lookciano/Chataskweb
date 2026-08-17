@@ -24,10 +24,10 @@ android {
     }
     signingConfigs {
         release {
-            storeFile file('../chat-task.keystore')
-            storePassword 'chattask2026'
-            keyAlias 'chat-task'
-            keyPassword 'chattask2026'
+            storeFile file('../chattask_nova_chave.jks')
+            storePassword 'Carambola.82'
+            keyAlias 'upload'
+            keyPassword 'Carambola.82'
         }
     }
     buildTypes {

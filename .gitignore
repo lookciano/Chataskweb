@@ -131,3 +131,4 @@ capacitor.config.json
 chat-task.keystore
 *.keystore
 google-services.json
+*.jks
