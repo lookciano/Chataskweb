@@ -125,10 +125,20 @@ GITHUB_SSH_PUBLIC_KEY.txt
 .env.*
 !.env.example
 
-# Capacitor — projeto nativo Android (gerado por cap add/sync)
-android/
+# Capacitor — projeto nativo Android (agora versionado: versione o código fonte,
+# mantenha fora builds, keystores e arquivos gerados)
+android/app/build/
+android/app/.cxx/
+android/.gradle/
+android/local.properties
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+android/app/src/main/res/xml/config.xml
+android/capacitor-cordova-android-plugins/src/main/libs/
+android/chat-task.keystore
+android/chattask_nova_chave.jks
 capacitor.config.json
-chat-task.keystore
 *.keystore
-google-services.json
 *.jks
+google-services.json

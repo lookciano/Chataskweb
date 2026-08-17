@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Chat Task</string>
+    <string name="title_activity_main">Chat Task</string>
+    <string name="package_name">com.gste.chattask</string>
+    <string name="custom_url_scheme">com.gste.chattask</string>
+</resources>
