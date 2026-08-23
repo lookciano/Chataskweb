@@ -1259,6 +1259,20 @@ export default function ChatApp() {
         <DropdownMenuItem
           onClick={(e) => {
             e.stopPropagation();
+            void shareTaskAsImage({ ...task, status: task.status }).catch((error) => {
+              if ((error as DOMException)?.name !== "AbortError") {
+                console.error("Erro ao compartilhar tarefa:", error);
+                toast.error("Não foi possível gerar a imagem da tarefa");
+              }
+            });
+          }}
+        >
+          <Share2 className="w-4 h-4" />
+          Compartilhar como imagem
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={(e) => {
+            e.stopPropagation();
             startEditPersonalTask(task);
           }}
         >
@@ -1728,7 +1742,12 @@ export default function ChatApp() {
         <DropdownMenuItem
           onClick={(e) => {
             e.stopPropagation();
-            void shareTaskAsImage(task);
+            void shareTaskAsImage(task).catch((error) => {
+              if ((error as DOMException)?.name !== "AbortError") {
+                console.error("Erro ao compartilhar tarefa:", error);
+                toast.error("Não foi possível gerar a imagem da tarefa");
+              }
+            });
           }}
         >
           <Share2 className="w-4 h-4" />
