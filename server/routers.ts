@@ -3,6 +3,8 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
+import { parseDateOnly } from "../shared/dateOnly";
+
 import { TRPCError } from "@trpc/server";
 import * as db from "./db";
 import { ENV } from "./_core/env";
@@ -73,8 +75,7 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         let dueDate: Date | null = null;
         if (input.dueDate) {
-          const parsed = new Date(input.dueDate);
-          if (!isNaN(parsed.getTime())) dueDate = parsed;
+          dueDate = parseDateOnly(input.dueDate);
         }
         return await db.createPersonalTask({
           userId: ctx.user.id,
@@ -94,8 +95,7 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         let dueDate: Date | null | undefined = undefined;
         if (input.dueDate !== undefined) {
-          const parsed = input.dueDate ? new Date(input.dueDate) : null;
-          dueDate = input.dueDate && !isNaN((parsed as Date).getTime()) ? parsed : null;
+          dueDate = parseDateOnly(input.dueDate);
         }
         return await db.updatePersonalTask(ctx.user.id ? input.id : input.id, ctx.user.id, {
           description: input.description,

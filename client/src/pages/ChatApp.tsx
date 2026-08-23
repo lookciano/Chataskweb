@@ -31,7 +31,9 @@ import {
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { normalizeName } from "@/../../shared/normalizeNames";
+import { formatDateOnly } from "@/../../shared/dateOnly";
 import { Share2, shareTaskAsImage } from "@/components/TaskShareButton";
+
 interface Message {
   id: number;
   chatRoomId: number;
@@ -133,6 +135,7 @@ export default function ChatApp() {
   const [showMyTasks, setShowMyTasks] = useState(false);
   const [displayName, setDisplayName] = useState(user?.displayName || user?.name || "");
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+  const [roomSearch, setRoomSearch] = useState("");
   const [mobileView, setMobileView] = useState<"chat" | "rooms" | "participants" | "tasks" | "myTasks">("rooms");
   const [showParticipantsModal, setShowParticipantsModal] = useState(false);
   const [memberToAddId, setMemberToAddId] = useState<string>("");
@@ -423,13 +426,13 @@ export default function ChatApp() {
     },
   });
 
-  // Handle window resize for mobile responsiveness
+  // Keep the React breakpoint aligned with the responsive layout.
   useEffect(() => {
-    const handleResize = () => {
-      setIsMobile(window.innerWidth < 1024);
-    };
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+    const mediaQuery = window.matchMedia("(max-width: 1023px)");
+    const handleChange = () => setIsMobile(mediaQuery.matches);
+    handleChange();
+    mediaQuery.addEventListener("change", handleChange);
+    return () => mediaQuery.removeEventListener("change", handleChange);
   }, []);
 
   // Trocar de sala quando clicar em push notification
@@ -1206,9 +1209,7 @@ export default function ChatApp() {
     setEditPersonalDescription(task.description);
     setEditPersonalPriority(task.priority);
     setEditPersonalDueDate(
-      task.dueDate
-        ? `${task.dueDate.getFullYear()}-${String(task.dueDate.getMonth() + 1).padStart(2, "0")}-${String(task.dueDate.getDate()).padStart(2, "0")}`
-        : ""
+      formatDateOnly(task.dueDate)
     );
   };
 
@@ -1250,15 +1251,6 @@ export default function ChatApp() {
         <DropdownMenuItem
           onClick={(e) => {
             e.stopPropagation();
-            void shareTaskAsImage({ ...task, status: task.status });
-          }}
-        >
-          <Share2 className="w-4 h-4" />
-          Compartilhar como imagem
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={(e) => {
-            e.stopPropagation();
             void shareTaskAsImage({ ...task, status: task.status }).catch((error) => {
               if ((error as DOMException)?.name !== "AbortError") {
                 console.error("Erro ao compartilhar tarefa:", error);
@@ -1268,7 +1260,7 @@ export default function ChatApp() {
           }}
         >
           <Share2 className="w-4 h-4" />
-          Compartilhar como imagem
+          Compartilhar
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={(e) => {
@@ -1311,6 +1303,10 @@ export default function ChatApp() {
   };
 
   const priorityOrder = (p: string) => (p === "high" ? 0 : p === "medium" ? 1 : 2);
+
+  const filteredRooms = (roomsQuery.data || []).filter((room: any) =>
+    String(room.name || "").toLocaleLowerCase("pt-BR").includes(roomSearch.trim().toLocaleLowerCase("pt-BR"))
+  );
 
   /** Renderiza a lista de tarefas pessoais (status pendente/concluída) com botão de nova. */
   const renderPersonalTasksSection = (statusFilter: "pending" | "completed") => {
@@ -1751,7 +1747,7 @@ export default function ChatApp() {
           }}
         >
           <Share2 className="w-4 h-4" />
-          Compartilhar como imagem
+          Compartilhar
         </DropdownMenuItem>
         {opts?.withEdit !== false && (
           <DropdownMenuItem
@@ -2349,18 +2345,6 @@ export default function ChatApp() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto mb-4"></div>
-          <p className="text-gray-600">Carregando...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // If loading, show a spinner
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-teal-50 flex items-center justify-center p-4">
@@ -3323,9 +3307,14 @@ export default function ChatApp() {
           </button>
         </div>
 
+        <div className="px-4 pt-3">
+          <Input value={roomSearch} onChange={(event) => setRoomSearch(event.target.value)} placeholder="Buscar sala..." aria-label="Buscar sala" className="h-9 text-sm" />
+        </div>
         <ScrollArea className="flex-1 p-4">
           <div className="space-y-1.5">
-            {roomsQuery.data?.map((room: any) => (
+            {filteredRooms.length === 0 ? (
+              <p className="px-2 py-6 text-center text-xs text-slate-500" role="status">Nenhuma sala encontrada</p>
+            ) : filteredRooms.map((room: any) => (
               <div key={room.id} className="group flex items-center gap-0.5">
                 <button
                   onClick={() => setSelectedRoom(room.id)}
@@ -3606,8 +3595,13 @@ export default function ChatApp() {
             </div>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center">
-            <p className="text-slate-400">Selecione uma sala para começar</p>
+          <div className="flex-1 flex items-center justify-center p-8">
+            <div className="max-w-md text-center">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-teal-50 text-teal-700"><MessageCircle className="h-7 w-7" /></div>
+              <h2 className="text-lg font-semibold text-slate-900">Comece uma conversa produtiva</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-600">Selecione uma sala para conversar com a equipe e transformar mensagens em tarefas acompanháveis.</p>
+              <p className="mt-3 text-xs text-slate-500">Suas tarefas pessoais permanecem privadas e separadas das salas.</p>
+            </div>
           </div>
         )}
       </div>
@@ -3619,7 +3613,10 @@ export default function ChatApp() {
         <div className="p-5 border-b border-slate-200">
           <div className="flex items-center gap-3">
             <img src={(typeof window !== "undefined" && window.location.hostname === "localhost") ? "https://chataskweb.onrender.com/favicon.ico" : "/favicon.ico"} alt="Tarefas" className="w-8 h-8 rounded-lg" />
-            <h2 className="text-base font-semibold text-slate-900">Tarefas</h2>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-base font-semibold text-slate-900">Tarefas</h2>
+              <p className="text-xs text-slate-500 mt-0.5">{filteredTasks.filter((task) => task.status !== "completed").length} pendentes{filteredTasks.filter((task) => task.status === "completed").length > 0 && ` · ${filteredTasks.filter((task) => task.status === "completed").length} concluídas`}</p>
+            </div>
           </div>
         </div>
 
@@ -3687,7 +3684,7 @@ export default function ChatApp() {
                           {(task.priority || task.dueDate) && (
                             <div className="flex gap-2 mt-1.5 flex-wrap">
                               <Badge className={getPriorityColor(task.priority)}>
-                                {task.priority}
+                                {getPriorityLabel(task.priority)}
                               </Badge>
                               {task.dueDate && (
                                 <Badge variant="outline" className="text-xs font-normal text-slate-600">
@@ -3736,7 +3733,7 @@ export default function ChatApp() {
                           {task.priority && (
                             <div className="flex gap-2 mt-1.5 flex-wrap">
                               <Badge className={getPriorityColor(task.priority)}>
-                                {task.priority}
+                                {getPriorityLabel(task.priority)}
                               </Badge>
                             </div>
                           )}
