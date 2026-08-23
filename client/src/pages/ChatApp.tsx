@@ -31,8 +31,7 @@ import {
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { normalizeName } from "@/../../shared/normalizeNames";
-import { TaskShareButton } from "@/components/TaskShareButton";
-
+import { Share2, shareTaskAsImage } from "@/components/TaskShareButton";
 interface Message {
   id: number;
   chatRoomId: number;
@@ -1251,6 +1250,15 @@ export default function ChatApp() {
         <DropdownMenuItem
           onClick={(e) => {
             e.stopPropagation();
+            void shareTaskAsImage({ ...task, status: task.status });
+          }}
+        >
+          <Share2 className="w-4 h-4" />
+          Compartilhar como imagem
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={(e) => {
+            e.stopPropagation();
             startEditPersonalTask(task);
           }}
         >
@@ -1717,6 +1725,15 @@ export default function ChatApp() {
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-44">
+        <DropdownMenuItem
+          onClick={(e) => {
+            e.stopPropagation();
+            void shareTaskAsImage(task);
+          }}
+        >
+          <Share2 className="w-4 h-4" />
+          Compartilhar como imagem
+        </DropdownMenuItem>
         {opts?.withEdit !== false && (
           <DropdownMenuItem
             onClick={(e) => {
@@ -1897,7 +1914,6 @@ export default function ChatApp() {
                               className="w-4 h-4 rounded border-slate-300"
                               title="Concluir tarefa"
                             />
-                            <TaskShareButton task={task} />
                             {taskActionsMenu(task)}
                           </div>
                         </div>
@@ -1945,7 +1961,6 @@ export default function ChatApp() {
                               className="w-4 h-4 rounded border-slate-300"
                               title="Reabrir tarefa"
                             />
-                            <TaskShareButton task={task} />
                             {taskActionsMenu(task, { withEdit: false })}
                           </div>
                         </div>
@@ -2558,8 +2573,7 @@ export default function ChatApp() {
                                     className="w-4 h-4 rounded border-slate-300"
                                     title="Concluir tarefa"
                                   />
-                                  <TaskShareButton task={task} />
-                            {taskActionsMenu(task)}
+                                  {taskActionsMenu(task)}
                                 </div>
                               </div>
                             </div>
@@ -2584,8 +2598,7 @@ export default function ChatApp() {
                                   {renderTaskDates(task, { showCompleted: true })}
                                 </div>
                                 <div className="flex items-center gap-2 shrink-0">
-                                  <TaskShareButton task={task} />
-                            {taskActionsMenu(task, { withEdit: false })}
+                                  {taskActionsMenu(task, { withEdit: false })}
                                 </div>
                               </div>
                             </Card>
@@ -3665,7 +3678,6 @@ export default function ChatApp() {
                             </div>
                           )}
                         </div>
-                        <TaskShareButton task={task} />
                         {taskActionsMenu(task)}
                       </div>
                     </Card>
@@ -3710,7 +3722,6 @@ export default function ChatApp() {
                             </div>
                           )}
                         </div>
-                        <TaskShareButton task={task} />
                         {taskActionsMenu(task, { withEdit: false })}
                       </div>
                     </Card>
