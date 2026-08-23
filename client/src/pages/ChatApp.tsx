@@ -31,6 +31,7 @@ import {
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { normalizeName } from "@/../../shared/normalizeNames";
+import { TaskShareButton } from "@/components/TaskShareButton";
 
 interface Message {
   id: number;
@@ -1896,6 +1897,7 @@ export default function ChatApp() {
                               className="w-4 h-4 rounded border-slate-300"
                               title="Concluir tarefa"
                             />
+                            <TaskShareButton task={task} />
                             {taskActionsMenu(task)}
                           </div>
                         </div>
@@ -1943,6 +1945,7 @@ export default function ChatApp() {
                               className="w-4 h-4 rounded border-slate-300"
                               title="Reabrir tarefa"
                             />
+                            <TaskShareButton task={task} />
                             {taskActionsMenu(task, { withEdit: false })}
                           </div>
                         </div>
@@ -2555,7 +2558,8 @@ export default function ChatApp() {
                                     className="w-4 h-4 rounded border-slate-300"
                                     title="Concluir tarefa"
                                   />
-                                  {taskActionsMenu(task)}
+                                  <TaskShareButton task={task} />
+                            {taskActionsMenu(task)}
                                 </div>
                               </div>
                             </div>
@@ -2580,7 +2584,8 @@ export default function ChatApp() {
                                   {renderTaskDates(task, { showCompleted: true })}
                                 </div>
                                 <div className="flex items-center gap-2 shrink-0">
-                                  {taskActionsMenu(task, { withEdit: false })}
+                                  <TaskShareButton task={task} />
+                            {taskActionsMenu(task, { withEdit: false })}
                                 </div>
                               </div>
                             </Card>
@@ -3660,6 +3665,7 @@ export default function ChatApp() {
                             </div>
                           )}
                         </div>
+                        <TaskShareButton task={task} />
                         {taskActionsMenu(task)}
                       </div>
                     </Card>
@@ -3704,6 +3710,7 @@ export default function ChatApp() {
                             </div>
                           )}
                         </div>
+                        <TaskShareButton task={task} />
                         {taskActionsMenu(task, { withEdit: false })}
                       </div>
                     </Card>
