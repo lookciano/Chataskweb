@@ -4121,8 +4121,9 @@ export default function ChatApp() {
       <Dialog open={showSummaryModal} onOpenChange={setShowSummaryModal}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Resumo Semanal</DialogTitle>
+            <DialogTitle>Relatório Semanal</DialogTitle>
             <DialogDescription>
+              O período começa no último domingo e vai até o momento da solicitação. O relatório é separado por responsável, com descrições completas.
               {summaryStats && (
                 <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
                   <div className="bg-teal-50 p-2 rounded">

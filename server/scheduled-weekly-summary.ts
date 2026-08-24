@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { sdk } from "./_core/sdk";
 import * as db from "./db";
 import { generateWeeklySummary, calculateWeeklySummaryData } from "./weekly-summary-generator";
+import { getPreviousSundayRange } from "../shared/weekRange";
 
 export async function handleWeeklySummarySchedule(req: Request, res: Response) {
   try {
@@ -23,18 +24,11 @@ export async function handleWeeklySummarySchedule(req: Request, res: Response) {
     // Generate summary for each room
     for (const room of rooms) {
       try {
-        // Calculate week dates (last Monday to last Sunday)
-        const now = new Date();
-        const lastMonday = new Date(now);
-        lastMonday.setDate(now.getDate() - (now.getDay() === 0 ? 6 : now.getDay() - 1));
-        lastMonday.setHours(0, 0, 0, 0);
-
-        const lastSunday = new Date(lastMonday);
-        lastSunday.setDate(lastMonday.getDate() + 6);
-        lastSunday.setHours(23, 59, 59, 999);
+        // Scheduled reports use the same previous-Sunday-to-request-time window.
+        const { start: lastSunday, end: reportEnd } = getPreviousSundayRange();
 
         // Get tasks for the week
-        const tasks = await db.getTasksForSummary(room.id, lastMonday, lastSunday);
+        const tasks = await db.getTasksForSummary(room.id, lastSunday, reportEnd);
         
         if (tasks.length === 0) {
           console.log(`[WEEKLY_SUMMARY_SCHEDULE] No tasks for room ${room.name}, skipping`);
@@ -51,8 +45,8 @@ export async function handleWeeklySummarySchedule(req: Request, res: Response) {
         const summaryData = calculateWeeklySummaryData(
           tasks,
           room.name,
-          lastMonday,
-          lastSunday
+          lastSunday,
+          reportEnd
         );
 
         // Generate summary with AI

@@ -4,6 +4,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { parseDateOnly } from "../shared/dateOnly";
+import { getPreviousSundayRange } from "../shared/weekRange";
 
 import { TRPCError } from "@trpc/server";
 import * as db from "./db";
@@ -1097,31 +1098,22 @@ export const appRouter = router({
 
   // Weekly Summary
   summary: router({
-    generate: publicProcedure
+    generate: protectedProcedure
       .input(z.object({
         chatRoomId: z.number(),
         weekStart: z.date().optional(),
         weekEnd: z.date().optional(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
+        await assertRoomAccess(ctx, input.chatRoomId);
         // Calculate week dates if not provided
         let weekStart = input.weekStart;
         let weekEnd = input.weekEnd;
         
         if (!weekStart || !weekEnd) {
-          const now = new Date();
-          // Get last Monday
-          const lastMonday = new Date(now);
-          lastMonday.setDate(now.getDate() - (now.getDay() === 0 ? 6 : now.getDay() - 1));
-          lastMonday.setHours(0, 0, 0, 0);
-          
-          // Get last Sunday
-          const lastSunday = new Date(lastMonday);
-          lastSunday.setDate(lastMonday.getDate() + 6);
-          lastSunday.setHours(23, 59, 59, 999);
-          
-          weekStart = weekStart || lastMonday;
-          weekEnd = weekEnd || lastSunday;
+          const range = getPreviousSundayRange();
+          weekStart = weekStart || range.start;
+          weekEnd = weekEnd || range.end;
         }
         
         // Get room info
