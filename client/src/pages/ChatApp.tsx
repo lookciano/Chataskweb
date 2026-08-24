@@ -20,7 +20,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { MessageCircle, CheckCircle2, Clock, AlertCircle, Plus, BarChart3, Reply, X, Menu, Settings, Users, ArrowLeft, Trash2, Sparkles, Edit2, MoreVertical, ThumbsUp, ListTodo } from "lucide-react";
+import { MessageCircle, CheckCircle2, Clock, AlertCircle, Plus, BarChart3, Reply, X, Menu, Settings, Users, ArrowLeft, Trash2, Sparkles, Edit2, MoreVertical, ThumbsUp, ListTodo, FileText } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -2490,6 +2490,17 @@ export default function ChatApp() {
                 <Sparkles className="w-4 h-4 mr-2" />
                 {isGeneratingSummary ? "Gerando..." : "Resumo Semanal"}
               </Button>
+              {weeklySummary && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full justify-start text-teal-700"
+                  onClick={() => setShowSummaryModal(true)}
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  Ver relatório gerado
+                </Button>
+              )}
               <Button
                 onClick={() => (window.location.href = "/report")}
                 variant="ghost"
@@ -3286,7 +3297,13 @@ export default function ChatApp() {
                 >
                   <Sparkles className="w-4 h-4" />
                   {isGeneratingSummary ? "Gerando..." : "Resumo Semanal"}
-                </DropdownMenuItem>
+                  </DropdownMenuItem>
+                  {weeklySummary && (
+                  <DropdownMenuItem onClick={() => setShowSummaryModal(true)}>
+                    <FileText className="w-4 h-4" />
+                    Ver relatório gerado
+                  </DropdownMenuItem>
+                  )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => setShowProfileModal(true)}>
                   <Settings className="w-4 h-4" />
