@@ -214,11 +214,13 @@ export default function ChatApp() {
   useEffect(() => {
     setRoomAdminIds((roomAdminQuery.data || []).map((admin: any) => Number(admin.userId)));
   }, [roomAdminQuery.data]);
+  const selectedRoomData = (roomsQuery.data || []).find((r: any) => r.id === selectedRoom);
+  const isRoomAdminParticipant = (userId: number) =>
+    roomAdminIds.includes(userId) || Number(selectedRoomData?.createdBy) === Number(userId);
   const canManageRoom =
     !!user &&
     (user.role === "admin" ||
-      roomAdminIds.includes(user.id) ||
-      !!(roomsQuery.data || []).find((r: any) => r.id === selectedRoom && r.createdBy === user.id));
+      isRoomAdminParticipant(user.id));
   const candidateMembersQuery = trpc.chat.listCandidateMembers.useQuery(
     { chatRoomId: selectedRoom || 0 },
     { enabled: !!selectedRoom && !!user && showParticipantsModal && canManageRoom }
@@ -3152,7 +3154,14 @@ export default function ChatApp() {
                       {(p.displayName || p.userName || "U")[0].toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium text-slate-900 truncate">{p.displayName || p.userName}</p>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <p className="font-medium text-slate-900 truncate">{p.displayName || p.userName}</p>
+                        {isRoomAdminParticipant(p.userId) && (
+                          <Badge variant="outline" className="shrink-0 border-teal-200 bg-teal-50 text-[10px] text-teal-700">
+                            Administrador
+                          </Badge>
+                        )}
+                      </div>
                       <p className="text-xs text-slate-500 truncate">{p.email}</p>
                     </div>
                     {canManageRoom && p.userId !== user?.id && (
@@ -3905,7 +3914,14 @@ export default function ChatApp() {
                     {(p.displayName || p.userName || "U")[0].toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-slate-900 truncate">{p.displayName || p.userName}</p>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <p className="font-medium text-slate-900 truncate">{p.displayName || p.userName}</p>
+                      {isRoomAdminParticipant(p.userId) && (
+                        <Badge variant="outline" className="shrink-0 border-teal-200 bg-teal-50 text-[10px] text-teal-700">
+                          Administrador
+                        </Badge>
+                      )}
+                    </div>
                     <p className="text-xs text-slate-500 truncate">{p.email}</p>
                   </div>
                   {canManageRoom && p.userId !== user?.id && (
