@@ -1,7 +1,7 @@
 import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import { adminProcedure, publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { parseDateOnly } from "../shared/dateOnly";
 import { getPreviousSundayRange } from "../shared/weekRange";
@@ -20,6 +20,16 @@ import { generateWeeklySummary, calculateWeeklySummaryData } from "./weekly-summ
 import { validateAndFixRoomTasks, getParticipantNameVariations } from "./task-name-validator";
 import { getUniqueParticipantNames } from "./participant-name-matcher";
 import { sendPushNotificationForMessage, testPushNotification } from "./_core/notification";
+
+function toPublicUser(user: any) {
+  return {
+    id: user.id,
+    name: user.name,
+    displayName: user.displayName,
+    email: user.email,
+    role: user.role,
+  };
+}
 
 async function assertRoomAccess(
   ctx: { user: { id: number; role?: string | null } | null },
@@ -45,16 +55,12 @@ async function assertCanManageRoom(
   chatRoomId: number
 ) {
   if (!ctx.user) {
-    throw new TRPCError({ code: "UNAUTHORIZED", message: "Selecione sua identidade para continuar" });
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "Autenticação necessária" });
   }
-  // Phase 1: global admin OR room creator
-  if (ctx.user.role === "admin") return;
-  const rooms = await db.getChatRooms();
-  const room = (rooms as any[]).find((r) => r.id === chatRoomId);
-  if (room && room.createdBy === ctx.user.id) return;
+  if (await db.isRoomAdmin(chatRoomId, ctx.user.id, ctx.user.role === "admin")) return;
   throw new TRPCError({
     code: "FORBIDDEN",
-    message: "Apenas admin ou criador da sala pode gerir participantes",
+    message: "Apenas administradores desta sala podem executar esta ação",
   });
 }
 
@@ -127,20 +133,17 @@ export const appRouter = router({
       }),
   }),
   auth: router({
-    me: publicProcedure.query(opts => opts.ctx.user),
+    me: publicProcedure.query(opts => opts.ctx.user ? toPublicUser(opts.ctx.user) : null),
     /**
      * Identity list rules (multi-room safer model):
      * - Platform admin session → full selectable list (may switch into any known person)
      * - No session / non-admin → only platform admins (bootstrap login for Luciano/Teste)
      * Regular members enter via room invite link, not this picker.
      */
-    listIdentities: publicProcedure.query(async ({ ctx }) => {
-      if (ctx.user?.role === "admin") {
-        return await db.listSelectableUsers();
-      }
-      return await db.listPlatformAdmins();
+    listIdentities: adminProcedure.query(async () => {
+      return (await db.listSelectableUsers()).map(toPublicUser);
     }),
-    selectIdentity: publicProcedure
+    selectIdentity: adminProcedure
       .input(z.object({
         userId: z.number().int().positive(),
       }))
@@ -187,7 +190,7 @@ export const appRouter = router({
         });
 
         await db.touchUserLastSignedIn(user.id);
-        return user;
+        return toPublicUser(user);
       }),
     login: publicProcedure
       .input(z.object({
@@ -228,7 +231,7 @@ export const appRouter = router({
         });
 
         await db.touchUserLastSignedIn(user.id);
-        return user;
+        return toPublicUser(user);
       }),
     register: publicProcedure
       .input(z.object({
@@ -270,7 +273,7 @@ export const appRouter = router({
           });
 
           await db.touchUserLastSignedIn(user!.id);
-          return user;
+          return toPublicUser(user!);
         }
 
         // New user
@@ -299,7 +302,7 @@ export const appRouter = router({
         });
 
         await db.touchUserLastSignedIn(user.id);
-        return user;
+        return toPublicUser(user);
       }),
     firstAccess: publicProcedure
       .input(z.object({
@@ -334,7 +337,7 @@ export const appRouter = router({
         });
 
         await db.touchUserLastSignedIn(user.id);
-        return user;
+        return toPublicUser(user);
       }),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
@@ -573,7 +576,7 @@ export const appRouter = router({
 
           return {
             success: true as const,
-            user: result.user,
+            user: toPublicUser(result.user),
             chatRoomId: result.chatRoomId,
             roomName: result.roomName,
             alreadyMember: result.alreadyMember,
@@ -595,10 +598,29 @@ export const appRouter = router({
         if (input.password !== ENV.roomAdminPassword) {
           throw new TRPCError({ code: "FORBIDDEN", message: "Senha incorreta" });
         }
-        if (ctx.user.role !== "admin") {
-          throw new TRPCError({ code: "FORBIDDEN", message: "Apenas admin pode excluir salas" });
-        }
+        await assertCanManageRoom(ctx, input.chatRoomId);
         return await db.deleteChatRoom(input.chatRoomId);
+      }),
+
+    getRoomAdmins: protectedProcedure
+      .input(z.object({ chatRoomId: z.number().int().positive() }))
+      .query(async ({ input, ctx }) => {
+        await assertRoomAccess(ctx, input.chatRoomId);
+        return await db.getRoomAdmins(input.chatRoomId);
+      }),
+    setRoomAdmin: protectedProcedure
+      .input(z.object({
+        chatRoomId: z.number(),
+        userId: z.number().int().positive(),
+        isAdmin: z.boolean(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await assertCanManageRoom(ctx, input.chatRoomId);
+        const member = await db.isRoomMember(input.chatRoomId, input.userId);
+        if (!member) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Usuário não participa desta sala" });
+        }
+        return await db.setRoomAdmin(input.chatRoomId, input.userId, input.isAdmin);
       }),
   }),
 
@@ -655,11 +677,16 @@ export const appRouter = router({
         ).catch(() => { /* erro de push não afeta o envio da mensagem */ });
         return message;
       }),
-    getReplies: publicProcedure
+    getReplies: protectedProcedure
       .input(z.object({
         messageId: z.number(),
       }))
-      .query(async ({ input }) => {
+      .query(async ({ input, ctx }) => {
+        const message = await db.getMessageById(input.messageId);
+        if (!message) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Mensagem não encontrada" });
+        }
+        await assertRoomAccess(ctx, message.chatRoomId);
         return await db.getMessageWithReplies(input.messageId);
       }),
     /** Thumbs-up (joinha) summaries for visible messages in a room. */
@@ -682,6 +709,11 @@ export const appRouter = router({
         messageId: z.number(),
       }))
       .mutation(async ({ input, ctx }) => {
+        const message = await db.getMessageById(input.messageId);
+        if (!message) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Mensagem não encontrada" });
+        }
+        await assertRoomAccess(ctx, message.chatRoomId);
         return await db.toggleThumbsUp(input.messageId, ctx.user.id);
       }),
     /**
@@ -728,17 +760,23 @@ export const appRouter = router({
       .query(async ({ input, ctx }) => {
         return await db.getTasksByUser(ctx.user.id, input.status);
       }),
-    allTasks: publicProcedure
+    allTasks: protectedProcedure
       .input(z.object({
         status: z.string().optional(),
       }))
-      .query(async ({ input }) => {
-        return await db.getAllTasks(input.status);
+      .query(async ({ input, ctx }) => {
+        if (ctx.user.role !== "admin") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Apenas administradores podem consultar todas as tarefas" });
+        }
+        return (await db.getAllTasks(input.status)).map((task: any) => ({
+          ...task,
+          createdAt: task.createdAt,
+          updatedAt: task.updatedAt,
+        }));
       }),
-    testPush: protectedProcedure
+    testPush: adminProcedure
       .mutation(async () => {
-        const result = await testPushNotification();
-        return result;
+        return await testPushNotification();
       }),
     updateStatus: protectedProcedure
       .input(z.object({
@@ -906,6 +944,7 @@ export const appRouter = router({
           throw new Error("Tarefa não encontrada");
         }
         
+        await assertRoomAccess(ctx, task.chatRoomId);
         // Delete the task
         await db.deleteTask(input.taskId);
         
@@ -977,26 +1016,31 @@ export const appRouter = router({
         console.log("[ASSIGNMENT_DETECTOR] Final result:", { success: true, updated });
         return { success: true, updated };
       }),
-    validateParticipantNames: publicProcedure
+    validateParticipantNames: adminProcedure
       .input(z.object({
         chatRoomId: z.number(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
+        await assertRoomAccess(ctx, input.chatRoomId);
         const participants = await db.getParticipants(input.chatRoomId);
         const participantNames = getUniqueParticipantNames(participants);
         
         const report = await validateAndFixRoomTasks(input.chatRoomId, participantNames);
         return report;
       }),
-    getNameVariations: publicProcedure
+    getNameVariations: adminProcedure
       .input(z.object({
         chatRoomId: z.number(),
       }))
-      .query(async ({ input }) => {
+      .query(async ({ input, ctx }) => {
+        await assertRoomAccess(ctx, input.chatRoomId);
         return await getParticipantNameVariations(input.chatRoomId);
       }),
-    cleanupAllParticipantNames: publicProcedure
+    cleanupAllParticipantNames: adminProcedure
       .mutation(async () => {
+        if (ENV.isProduction && !ENV.enableDebugEndpoints) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Operação não disponível em produção" });
+        }
         const rooms = await db.getChatRooms();
         const allReports = [];
         let totalCorrected = 0;
@@ -1028,12 +1072,15 @@ export const appRouter = router({
           reports: allReports,
         };
       }),
-    debugExtraction: publicProcedure
+    debugExtraction: adminProcedure
       .input(z.object({
         messageContent: z.string(),
         chatRoomId: z.number(),
       }))
       .query(async ({ input }) => {
+        if (ENV.isProduction && !ENV.enableDebugEndpoints) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Operação não disponível em produção" });
+        }
         const participants = await db.getParticipants(input.chatRoomId);
         const participantNames = participants.map((p: any) => p.displayName).filter(Boolean) as string[];
         
@@ -1049,12 +1096,15 @@ export const appRouter = router({
           output: extracted,
         };
       }),
-    debugAssignment: publicProcedure
+    debugAssignment: adminProcedure
       .input(z.object({
         messageContent: z.string(),
         chatRoomId: z.number(),
       }))
       .query(async ({ input }) => {
+        if (ENV.isProduction && !ENV.enableDebugEndpoints) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Operação não disponível em produção" });
+        }
         const allTasks = await db.getTasksWithDetails(input.chatRoomId);
         const participants = await db.getParticipants(input.chatRoomId);
         

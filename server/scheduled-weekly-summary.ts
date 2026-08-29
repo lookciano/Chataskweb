@@ -92,12 +92,7 @@ export async function handleWeeklySummarySchedule(req: Request, res: Response) {
   } catch (error) {
     console.error("[WEEKLY_SUMMARY_SCHEDULE] Fatal error:", error);
     res.status(500).json({
-      error: error instanceof Error ? error.message : "Unknown error",
-      stack: error instanceof Error ? error.stack : undefined,
-      context: {
-        url: req.url,
-        timestamp: new Date().toISOString(),
-      },
+      error: "Erro interno ao processar o relatório semanal",
     });
   }
 }

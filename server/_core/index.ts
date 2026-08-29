@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
+import { ENV } from "./env";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
@@ -35,17 +36,35 @@ async function startServer() {
   const server = createServer(app);
   // Render / reverse proxies terminate TLS; needed for secure cookies + correct protocol.
   app.set("trust proxy", 1);
-  // Configure body parser with larger size limit for file uploads
-  app.use(express.json({ limit: "50mb" }));
-  app.use(express.urlencoded({ limit: "50mb", extended: true }));
+  // Keep ordinary API payloads bounded; uploads must use a dedicated flow.
+  app.use(express.json({ limit: "256kb" }));
+  app.use(express.urlencoded({ limit: "256kb", extended: true }));
 
-  // CORS para Capacitor (Android/iOS WebView) — permite cookies cross-origin
+  // Reflect only explicitly trusted origins when credentials are enabled.
+  const allowedOrigins = new Set([
+    ENV.appUrl || "https://chataskweb.onrender.com",
+    ...(process.env.NODE_ENV === "development" ? ["http://localhost:5173", "http://localhost:3000"] : []),
+    "capacitor://localhost",
+    "https://localhost",
+    "http://localhost",
+  ]);
   app.use(
     cors({
-      origin: true, // reflete a origem da requisição
-      credentials: true, // permite cookies cross-origin
+      origin: (origin, callback) => {
+        if (!origin || allowedOrigins.has(origin)) return callback(null, true);
+        return callback(new Error("Origin not allowed"));
+      },
+      credentials: true,
     })
   );
+  app.disable("x-powered-by");
+  app.use((_req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    next();
+  });
 
   registerStorageProxy(app);
   // Local JWT identity replaces Manus OAuth (select existing team member).

@@ -16,6 +16,7 @@ export function useAuth(options?: UseAuthOptions) {
   });
 
   const identitiesQuery = trpc.auth.listIdentities.useQuery(undefined, {
+    enabled: Boolean(meQuery.data?.role === "admin"),
     retry: false,
     refetchOnWindowFocus: false,
   });

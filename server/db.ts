@@ -587,6 +587,61 @@ export async function isRoomMember(
   return Boolean(asMember[0]);
 }
 
+export async function isRoomAdmin(chatRoomId: number, userId: number, isGlobalAdmin = false): Promise<boolean> {
+  if (isGlobalAdmin) return true;
+  const db = await getDb();
+  if (!db) return false;
+  const rows = await db
+    .select({ id: roomMembers.id })
+    .from(roomMembers)
+    .where(and(
+      eq(roomMembers.chatRoomId, chatRoomId),
+      eq(roomMembers.userId, userId),
+      eq(roomMembers.status, "approved"),
+      eq(roomMembers.isAdmin, true)
+    ))
+    .limit(1);
+  if (rows[0]) return true;
+
+  // Preserve administration of rooms created before roomMembers existed.
+  const legacyRoom = await db
+    .select({ createdBy: chatRooms.createdBy })
+    .from(chatRooms)
+    .where(eq(chatRooms.id, chatRoomId))
+    .limit(1);
+  return Number(legacyRoom[0]?.createdBy) === Number(userId);
+}
+
+export async function getRoomAdmins(chatRoomId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rows = await db
+    .select({
+      userId: roomMembers.userId,
+      name: users.name,
+      displayName: users.displayName,
+      email: users.email,
+      isAdmin: roomMembers.isAdmin,
+    })
+    .from(roomMembers)
+    .innerJoin(users, eq(users.id, roomMembers.userId))
+    .where(and(eq(roomMembers.chatRoomId, chatRoomId), eq(roomMembers.status, "approved"), eq(roomMembers.isAdmin, true)));
+  return rows.map((row: any) => ({
+    userId: row.userId,
+    name: row.displayName || row.name || `User ${row.userId}`,
+    email: row.email,
+  }));
+}
+
+export async function setRoomAdmin(chatRoomId: number, userId: number, isAdmin: boolean) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(roomMembers)
+    .set({ isAdmin })
+    .where(and(eq(roomMembers.chatRoomId, chatRoomId), eq(roomMembers.userId, userId), eq(roomMembers.status, "approved")));
+  return { success: true as const };
+}
+
 /**
  * Ensure membership mirrored in both chatRoomParticipants and roomMembers(approved).
  * Does not create users. Safe to call repeatedly.

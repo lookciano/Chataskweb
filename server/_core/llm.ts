@@ -75,9 +75,7 @@ function normalizeMessage(msg: Message): Message {
   return msg;
 }
 
-function normalizeToolChoice(choice: ToolChoice | undefined, tools?: Tool[]) {
-  if (!choice) return undefined;
-  if (typeof choice === "string") return choice;
+function normalizeToolChoice(choice: ToolChoice | undefined): ToolChoice | undefined {
   return choice;
 }
 
@@ -110,17 +108,17 @@ const fetchWithBackoff = async (
   let lastError: Error | undefined;
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      const response = await fetch(url, init);
+      const response = await fetch(url, { ...init, signal: AbortSignal.timeout(30_000) });
       if (response.status === 429 || response.status >= 500) {
         const delay = Math.min(1000 * Math.pow(2, attempt), 8000);
-        await new Promise((r) => setTimeout(r, delay));
+        await new Promise((resolve) => setTimeout(resolve, delay));
         continue;
       }
       return response;
     } catch (err) {
       lastError = err as Error;
       const delay = Math.min(1000 * Math.pow(2, attempt), 8000);
-      await new Promise((r) => setTimeout(r, delay));
+      await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
   throw lastError || new Error("Fetch failed after retries");
@@ -147,53 +145,26 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     messages: messages.map(normalizeMessage),
     model: model || DEFAULT_MODEL,
   };
-
-  if (tools && tools.length > 0) {
-    payload.tools = tools;
-  }
-
-  const normalizedToolChoice = normalizeToolChoice(toolChoice || tool_choice, tools);
-  if (normalizedToolChoice) {
-    payload.tool_choice = normalizedToolChoice;
-  }
-
+  if (tools?.length) payload.tools = tools;
+  const normalizedToolChoice = normalizeToolChoice(toolChoice || tool_choice);
+  if (normalizedToolChoice) payload.tool_choice = normalizedToolChoice;
   const resolvedMaxTokens = max_tokens ?? maxTokens;
-  if (typeof resolvedMaxTokens === "number") {
-    payload.max_tokens = resolvedMaxTokens;
-  }
-
-  if (typeof temperature === "number") {
-    payload.temperature = temperature;
-  }
-
-  const normalizedResponseFormat = normalizeResponseFormat({
-    responseFormat,
-    response_format,
-    outputSchema,
-    output_schema,
-  });
-  if (normalizedResponseFormat) {
-    payload.response_format = normalizedResponseFormat;
-  }
+  if (typeof resolvedMaxTokens === "number") payload.max_tokens = resolvedMaxTokens;
+  if (typeof temperature === "number") payload.temperature = temperature;
+  const normalizedResponseFormat = normalizeResponseFormat({ responseFormat, response_format, outputSchema, output_schema });
+  if (normalizedResponseFormat) payload.response_format = normalizedResponseFormat;
 
   const response = await fetchWithBackoff(OPENROUTER_URL, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${ENV.openrouterApiKey}`,
+      authorization: ['Bearer ', ENV.openrouterApiKey].join(""),
       "HTTP-Referer": ENV.appUrl || "https://chataskweb.onrender.com",
       "X-Title": "Chataskweb",
     },
     body: JSON.stringify(payload),
   });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `LLM invoke failed: ${response.status} ${response.statusText} – ${errorText}`
-    );
-  }
-
+  if (!response.ok) throw new Error(`LLM invoke failed: ${response.status} ${response.statusText}`);
   return (await response.json()) as InvokeResult;
 }
 
@@ -201,69 +172,40 @@ export async function listLLMModels() {
   assertApiKey();
   const response = await fetchWithBackoff("https://openrouter.ai/api/v1/models", {
     method: "GET",
-    headers: { authorization: `Bearer ${ENV.openrouterApiKey}` },
+    headers: { authorization: ['Bearer ', ENV.openrouterApiKey].join("") },
   });
-  if (!response.ok) {
-    throw new Error(`Failed to list models: ${response.status}`);
-  }
-  const data = await response.json();
+  if (!response.ok) throw new Error(`Failed to list models: ${response.status}`);
+  const data = await response.json() as { data?: unknown[] };
   return data.data || [];
 }
 
 export async function invokeLLMStream(params: InvokeParams): Promise<ReadableStream<Uint8Array>> {
   assertApiKey();
-  const {
-    messages,
-    model,
-    tools,
-    toolChoice,
-    tool_choice,
-    maxTokens,
-    max_tokens,
-    temperature,
-  } = params;
-
-  const payload: Record<string, unknown> = {
-    messages: messages.map(normalizeMessage),
-    model: model || DEFAULT_MODEL,
-    stream: true,
-  };
-
-  if (tools && tools.length > 0) {
-    payload.tools = tools;
-  }
-
-  const normalizedToolChoice = normalizeToolChoice(toolChoice || tool_choice, tools);
-  if (normalizedToolChoice) {
-    payload.tool_choice = normalizedToolChoice;
-  }
-
+  const { messages, model, tools, toolChoice, tool_choice, maxTokens, max_tokens, temperature } = params;
+  const payload: Record<string, unknown> = { messages: messages.map(normalizeMessage), model: model || DEFAULT_MODEL, stream: true };
+  if (tools?.length) payload.tools = tools;
+  const normalizedToolChoice = normalizeToolChoice(toolChoice || tool_choice);
+  if (normalizedToolChoice) payload.tool_choice = normalizedToolChoice;
   const resolvedMaxTokens = max_tokens ?? maxTokens;
-  if (typeof resolvedMaxTokens === "number") {
-    payload.max_tokens = resolvedMaxTokens;
-  }
-
-  if (typeof temperature === "number") {
-    payload.temperature = temperature;
-  }
+  if (typeof resolvedMaxTokens === "number") payload.max_tokens = resolvedMaxTokens;
+  if (typeof temperature === "number") payload.temperature = temperature;
 
   const response = await fetchWithBackoff(OPENROUTER_URL, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${ENV.openrouterApiKey}`,
+      authorization: ['Bearer ', ENV.openrouterApiKey].join(""),
       "HTTP-Referer": ENV.appUrl || "https://chataskweb.onrender.com",
       "X-Title": "Chataskweb",
     },
     body: JSON.stringify(payload),
   });
+  if (!response.ok) throw new Error(`LLM stream failed: ${response.status} ${response.statusText}`);
+  if (!response.body) throw new Error("LLM stream returned no body");
+  return response.body;
+}
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `LLM stream failed: ${response.status} ${response.statusText} – ${errorText}`
-    );
-  }
-
-  return response.body as ReadableStream<Uint8Array>;
+export const MAX_PROMPT_TEXT_CHARS = 6000;
+export function truncateText(text: string, maxLength = MAX_PROMPT_TEXT_CHARS): string {
+  return text.length <= maxLength ? text : `${text.slice(0, maxLength)}\n[...conteúdo truncado por limite de tamanho]`;
 }

@@ -12,9 +12,7 @@ export type LocalSessionPayload = {
 function getSessionSecret() {
   // Read live env so production secrets and tests both work after process boot.
   const secret =
-    process.env.JWT_SECRET ||
-    ENV.cookieSecret ||
-    "chataskweb-dev-secret-change-me";
+    process.env.JWT_SECRET || ENV.cookieSecret;
   return new TextEncoder().encode(secret);
 }
 

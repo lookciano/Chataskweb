@@ -138,6 +138,7 @@ export default function ChatApp() {
   const [roomSearch, setRoomSearch] = useState("");
   const [mobileView, setMobileView] = useState<"chat" | "rooms" | "participants" | "tasks" | "myTasks">("rooms");
   const [showParticipantsModal, setShowParticipantsModal] = useState(false);
+  const [roomAdminIds, setRoomAdminIds] = useState<number[]>([]);
   const [memberToAddId, setMemberToAddId] = useState<string>("");
   const [hasUnreadBelow, setHasUnreadBelow] = useState(false);
   const [isUserNearBottom, setIsUserNearBottom] = useState(true);
@@ -158,7 +159,6 @@ export default function ChatApp() {
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const ROOM_PASSWORD = "12345";
   const { widths, isResizing, handleMouseDown } = useResizableColumns();
   const utils = trpc.useUtils();
 
@@ -207,9 +207,17 @@ export default function ChatApp() {
     { chatRoomId: selectedRoom || 0 },
     { enabled: !!selectedRoom && !!user }
   );
+  const roomAdminQuery = trpc.chat.getRoomAdmins.useQuery(
+    { chatRoomId: selectedRoom || 0 },
+    { enabled: !!selectedRoom && !!user && showParticipantsModal }
+  );
+  useEffect(() => {
+    setRoomAdminIds((roomAdminQuery.data || []).map((admin: any) => Number(admin.userId)));
+  }, [roomAdminQuery.data]);
   const canManageRoom =
     !!user &&
     (user.role === "admin" ||
+      roomAdminIds.includes(user.id) ||
       !!(roomsQuery.data || []).find((r: any) => r.id === selectedRoom && r.createdBy === user.id));
   const candidateMembersQuery = trpc.chat.listCandidateMembers.useQuery(
     { chatRoomId: selectedRoom || 0 },
@@ -2220,10 +2228,7 @@ export default function ChatApp() {
       alert("Digite a senha");
       return;
     }
-    if (createRoomPassword !== ROOM_PASSWORD) {
-      alert("Senha incorreta");
-      return;
-    }
+
     try {
       await createRoomMutation.mutateAsync({
         name: newRoomName.trim(),
@@ -2250,10 +2255,7 @@ export default function ChatApp() {
       alert("Digite a senha");
       return;
     }
-    if (deleteRoomPassword !== ROOM_PASSWORD) {
-      alert("Senha incorreta");
-      return;
-    }
+
     if (!roomToDelete) return;
     try {
       await deleteRoomMutation.mutateAsync({
