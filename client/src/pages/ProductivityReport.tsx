@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
+import { buildTaskTimeline } from "@shared/taskTimeline";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -86,34 +87,10 @@ export default function ProductivityReport() {
   }, [tasks]);
 
   const timelineData = useMemo(() => {
-    const timeline: Record<string, { date: string; created: number; completed: number }> = {};
-    
-    // Filter tasks by selected responsible if any are selected
-    const filteredTasksForChart = selectedChartResponsibles.length === 0 
-      ? tasks 
+    const filteredTasksForChart = selectedChartResponsibles.length === 0
+      ? tasks
       : tasks.filter(task => task.assignedToName && selectedChartResponsibles.includes(task.assignedToName));
-    
-    filteredTasksForChart.forEach((task) => {
-      const createdDate = new Date(task.createdAt).toISOString().split('T')[0];
-      if (!timeline[createdDate]) {
-        timeline[createdDate] = { date: createdDate, created: 0, completed: 0 };
-      }
-      timeline[createdDate].created++;
-      
-      // Prefer completedAt (real/approx completion day). Fall back to updatedAt only if missing.
-      if (task.status === "completed") {
-        const completionSource = task.completedAt ?? task.updatedAt;
-        if (completionSource) {
-          const completedDate = new Date(completionSource).toISOString().split("T")[0];
-          if (!timeline[completedDate]) {
-            timeline[completedDate] = { date: completedDate, created: 0, completed: 0 };
-          }
-          timeline[completedDate].completed++;
-        }
-      }
-    });
-    
-    return Object.values(timeline).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    return buildTaskTimeline(filteredTasksForChart);
   }, [tasks, selectedChartResponsibles]);
 
   const filteredTasks = useMemo(() => {
