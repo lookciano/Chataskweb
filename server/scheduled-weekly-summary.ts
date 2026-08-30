@@ -2,7 +2,7 @@ import { Request, Response } from "express";
 import { sdk } from "./_core/sdk";
 import * as db from "./db";
 import { generateWeeklySummary, calculateWeeklySummaryData } from "./weekly-summary-generator";
-import { getPreviousSundayRange } from "../shared/weekRange";
+import { getLastSevenDaysRange } from "../shared/weekRange";
 
 export async function handleWeeklySummarySchedule(req: Request, res: Response) {
   try {
@@ -25,10 +25,10 @@ export async function handleWeeklySummarySchedule(req: Request, res: Response) {
     for (const room of rooms) {
       try {
         // Scheduled reports use the same previous-Sunday-to-request-time window.
-        const { start: lastSunday, end: reportEnd } = getPreviousSundayRange();
+        const { start: lastSevenDays, end: reportEnd } = getLastSevenDaysRange();
 
         // Get tasks for the week
-        const tasks = await db.getTasksForSummary(room.id, lastSunday, reportEnd);
+        const tasks = await db.getTasksForSummary(room.id, lastSevenDays, reportEnd);
         
         if (tasks.length === 0) {
           results.push({
@@ -44,7 +44,7 @@ export async function handleWeeklySummarySchedule(req: Request, res: Response) {
         const summaryData = calculateWeeklySummaryData(
           tasks,
           room.name,
-          lastSunday,
+          lastSevenDays,
           reportEnd
         );
 

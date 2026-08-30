@@ -63,18 +63,16 @@ function buildSummaryPrompt(data: WeeklySummaryData): string {
     return `RESPONSÁVEL: ${truncateText(responsible.name, 200)}\nEstatísticas: total=${responsible.total}; concluídas=${responsible.completed}; pendentes=${responsible.pending}; canceladas=${responsible.cancelled}; taxa de conclusão=${responsible.total ? ((responsible.completed / responsible.total) * 100).toFixed(1) : "0.0"}%\nAtividades:\n${truncateText(tasks, 12000)}`;
   }).join("\n\n");
 
-  return `Você é um analista de controle de tarefas. Gere um relatório semanal analítico, direto e preciso, sem avaliar pessoas, sem elogios, críticas, comentários sobre desempenho e sem recomendações genéricas.
+  return `Você é um analista de controle de tarefas. Gere um relatório analítico, direto e preciso, sem avaliar pessoas, sem elogios, críticas, comentários sobre desempenho e sem recomendações genéricas.
+
+IMPORTANTE: este relatório deve considerar exclusivamente as atividades CONCLUÍDAS nos últimos sete dias do período abaixo. Não inclua tarefas pendentes, canceladas ou concluídas fora do período.
 
 Sala: ${truncateText(data.roomName, 200)}
 Período: ${date(data.weekStart)} a ${date(data.weekEnd)}
 
-ESTATÍSTICAS DA SALA
-- Total de atividades: ${data.totalTasks}
-- Concluídas: ${data.completedTasks}
-- Pendentes: ${data.pendingTasks}
-- Canceladas: ${data.cancelledTasks}
-- Taxa de conclusão: ${data.completionRate.toFixed(1)}%
-- Pendências anteriores ao início do período: ${data.overdueTasks}
+ESTATÍSTICAS DA SALA — ATIVIDADES CONCLUÍDAS NO PERÍODO
+- Total de atividades concluídas: ${data.completedTasks}
+- Responsáveis com atividades concluídas: ${data.responsibles.length}
 
 DADOS POR RESPONSÁVEL
 ${responsibleSections || "Nenhum responsável com atividades no período."}
@@ -83,16 +81,14 @@ FORMATO OBRIGATÓRIO
 # Relatório semanal — ${data.roomName}
 Período: ${date(data.weekStart)} a ${date(data.weekEnd)}
 
-## Resumo estatístico da sala
-Apresente os números gerais acima.
+## Resumo das atividades concluídas
+Apresente o total de atividades concluídas no período.
 
 ## Responsável: Nome
-- Estatísticas: total, concluídas, pendentes, canceladas e taxa de conclusão.
-- Atividades concluídas: liste o número e a descrição completa de cada uma.
-- Atividades pendentes: liste o número e a descrição completa de cada uma.
-- Atividades canceladas: liste o número e a descrição completa de cada uma, se houver.
+- Total de atividades concluídas no período.
+- Liste o número e a descrição completa de cada atividade concluída.
 
-Repita a seção para TODOS os responsáveis, sem limitar a quantidade. Preserve exatamente os números e as descrições fornecidas. O relatório deve permitir identificar as pendências e montar um plano de ação. Não invente prazos, causas ou responsáveis. Responda somente em português e não inclua juízo de valor sobre o desempenho.`;
+Repita a seção para TODOS os responsáveis com atividades concluídas. Não inclua tarefas pendentes, canceladas ou concluídas fora do período. Preserve exatamente os números e as descrições fornecidas. Não invente prazos, causas ou responsáveis. Responda somente em português e não inclua juízo de valor sobre o desempenho.`;
 }
 
 export function calculateWeeklySummaryData(tasks: any[], roomName: string, weekStart: Date, weekEnd: Date): WeeklySummaryData {

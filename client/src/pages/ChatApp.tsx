@@ -2498,7 +2498,11 @@ export default function ChatApp() {
                   type="button"
                   variant="ghost"
                   className="w-full justify-start text-teal-700"
-                  onClick={() => setShowSummaryModal(true)}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    window.requestAnimationFrame(() => setShowSummaryModal(true));
+                  }}
                 >
                   <FileText className="w-4 h-4 mr-2" />
                   Ver relatório gerado
@@ -3309,7 +3313,12 @@ export default function ChatApp() {
                   {isGeneratingSummary ? "Gerando..." : "Resumo Semanal"}
                   </DropdownMenuItem>
                   {weeklySummary && (
-                  <DropdownMenuItem onClick={() => setShowSummaryModal(true)}>
+                  <DropdownMenuItem
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      window.requestAnimationFrame(() => setShowSummaryModal(true));
+                    }}
+                  >
                     <FileText className="w-4 h-4" />
                     Ver relatório gerado
                   </DropdownMenuItem>
@@ -4153,11 +4162,12 @@ export default function ChatApp() {
 
       {/* Weekly Summary Modal */}
       <Dialog open={showSummaryModal} onOpenChange={setShowSummaryModal}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="w-[calc(100%-1rem)] max-w-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto p-4 sm:p-6" onOpenAutoFocus={(event) => event.preventDefault()}>
+
           <DialogHeader>
             <DialogTitle>Relatório Semanal</DialogTitle>
             <DialogDescription>
-              O período começa no último domingo e vai até o momento da solicitação. O relatório é separado por responsável, com descrições completas.
+              O relatório considera somente as atividades concluídas nos últimos sete dias, separadas por responsável, com descrições completas.
               {summaryStats && (
                 <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
                   <div className="bg-teal-50 p-2 rounded">

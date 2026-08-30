@@ -1652,20 +1652,18 @@ export async function getTasksForSummary(chatRoomId: number, weekStart: Date, we
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
-  // Include every task relevant to the weekly room report: tasks created
-  // during the period plus older tasks that were completed during it or are
-  // still pending. This makes the report useful for an action plan.
+  // Weekly reports cover only the rolling seven-day window. Completed
+  // activities are selected by completedAt, so older completed activities
+  // cannot reappear in a later report.
   const weeklyTasks = await db
     .select()
     .from(tasks)
     .where(
       and(
         eq(tasks.chatRoomId, chatRoomId),
-        or(
-          and(gte(tasks.createdAt, weekStart), lte(tasks.createdAt, weekEnd)),
-          and(eq(tasks.status, "completed"), gte(tasks.completedAt, weekStart), lte(tasks.completedAt, weekEnd)),
-          and(eq(tasks.status, "pending"), lt(tasks.createdAt, weekStart))
-        )
+        eq(tasks.status, "completed"),
+        gte(tasks.completedAt, weekStart),
+        lte(tasks.completedAt, weekEnd),
       )
     );
   

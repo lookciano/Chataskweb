@@ -4,7 +4,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { parseDateOnly } from "../shared/dateOnly";
-import { getPreviousSundayRange } from "../shared/weekRange";
+import { getLastSevenDaysRange } from "../shared/weekRange";
 
 import { TRPCError } from "@trpc/server";
 import * as db from "./db";
@@ -1148,7 +1148,7 @@ export const appRouter = router({
         let weekEnd = input.weekEnd;
         
         if (!weekStart || !weekEnd) {
-          const range = getPreviousSundayRange();
+          const range = getLastSevenDaysRange();
           weekStart = weekStart || range.start;
           weekEnd = weekEnd || range.end;
         }
