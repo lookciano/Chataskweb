@@ -11,6 +11,8 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { handleWeeklySummarySchedule } from "../scheduled-weekly-summary";
+import { createRateLimit } from "./rateLimit";
+import { createOriginProtection } from "./csrf";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -57,6 +59,7 @@ async function startServer() {
       credentials: true,
     })
   );
+  app.use(createOriginProtection(allowedOrigins));
   app.disable("x-powered-by");
   app.use((_req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
@@ -67,6 +70,15 @@ async function startServer() {
   });
 
   registerStorageProxy(app);
+  // Rate-limit only abusive/high-risk entry points. Normal LLM task extraction
+  // and spelling correction remain available because they are core features.
+  app.use("/api/trpc/auth.login", createRateLimit("login", { windowMs: 60_000, max: 10 }));
+  app.use("/api/trpc/auth.register", createRateLimit("register", { windowMs: 60_000, max: 5 }));
+  app.use("/api/trpc/auth.firstAccess", createRateLimit("first-access", { windowMs: 60_000, max: 5 }));
+  app.use("/api/trpc/chat.createRoom", createRateLimit("create-room", { windowMs: 60_000, max: 5 }));
+  app.use("/api/trpc/chat.createInvite", createRateLimit("create-invite", { windowMs: 60_000, max: 10 }));
+  app.use("/api/trpc/messages.send", createRateLimit("send-message", { windowMs: 60_000, max: 120 }));
+  app.use("/api/trpc/summary.generate", createRateLimit("summary", { windowMs: 60_000, max: 10 }));
   // Local JWT identity replaces Manus OAuth (select existing team member).
   // tRPC API
   app.use(
@@ -78,7 +90,11 @@ async function startServer() {
   );
   
   // Scheduled handlers
-  app.post("/api/scheduled/weekly-summary", handleWeeklySummarySchedule);
+  app.post(
+    "/api/scheduled/weekly-summary",
+    createRateLimit("scheduled-summary", { windowMs: 60_000, max: 2 }),
+    handleWeeklySummarySchedule,
+  );
   
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {

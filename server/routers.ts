@@ -20,6 +20,7 @@ import { generateWeeklySummary, calculateWeeklySummaryData } from "./weekly-summ
 import { validateAndFixRoomTasks, getParticipantNameVariations } from "./task-name-validator";
 import { getUniqueParticipantNames } from "./participant-name-matcher";
 import { sendPushNotificationForMessage, testPushNotification } from "./_core/notification";
+import { consumeDailyReportLimit } from "./_core/rateLimit";
 
 function toPublicUser(user: any) {
   return {
@@ -1156,6 +1157,7 @@ export const appRouter = router({
       }))
       .mutation(async ({ input, ctx }) => {
         await assertRoomAccess(ctx, input.chatRoomId);
+        consumeDailyReportLimit(ctx.user.id);
         // Calculate week dates if not provided
         let weekStart = input.weekStart;
         let weekEnd = input.weekEnd;
