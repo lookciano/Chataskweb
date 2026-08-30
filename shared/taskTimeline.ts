@@ -1,3 +1,5 @@
+export type ReportPeriod = "week" | "month" | "quarter" | "all";
+
 export type TimelineTask = {
   createdAt: Date | string;
   status: string;
@@ -57,4 +59,60 @@ export function filterTimelineTasksByPeriod<T extends TimelineTask>(
     return (Number.isFinite(created) && created >= start.getTime() && created <= now.getTime()) ||
       (Number.isFinite(completed) && completed >= start.getTime() && completed <= now.getTime());
   });
+}
+
+/** Build one timeline from one selected period, with independent event dates. */
+export function buildReportTimeline<T extends TimelineTask>(
+  tasks: T[],
+  period: ReportPeriod,
+  now = new Date(),
+): TimelinePoint[] {
+  if (period === "all") return buildTaskTimeline(tasks);
+  const days = period === "week" ? 7 : period === "month" ? 30 : 90;
+  const start = new Date(now);
+  start.setDate(start.getDate() - days);
+  const inRange = (value: Date | string | null | undefined) => {
+    if (!value) return false;
+    const time = new Date(value).getTime();
+    return Number.isFinite(time) && time >= start.getTime() && time <= now.getTime();
+  };
+  const timeline = new Map<string, TimelinePoint>();
+  const pointFor = (date: string) => {
+    let point = timeline.get(date);
+    if (!point) {
+      point = { date, created: 0, completed: 0 };
+      timeline.set(date, point);
+    }
+    return point;
+  };
+  for (const task of tasks) {
+    if (inRange(task.createdAt)) pointFor(localCalendarDate(task.createdAt)).created += 1;
+    if (task.status === "completed" && inRange(task.completedAt)) {
+      pointFor(localCalendarDate(task.completedAt!)).completed += 1;
+    }
+  }
+  return Array.from(timeline.values()).sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** Extract the two lists represented by the same selected period. */
+export function getReportLists<T extends TimelineTask>(
+  tasks: T[],
+  period: "week" | "month" | "quarter" | "all",
+  now = new Date(),
+) {
+  if (period === "all") {
+    return { created: tasks, completed: tasks.filter((task) => task.status === "completed") };
+  }
+  const days = period === "week" ? 7 : period === "month" ? 30 : 90;
+  const start = new Date(now);
+  start.setDate(start.getDate() - days);
+  const inRange = (value: Date | string | null | undefined) => {
+    if (!value) return false;
+    const time = new Date(value).getTime();
+    return Number.isFinite(time) && time >= start.getTime() && time <= now.getTime();
+  };
+  return {
+    created: tasks.filter((task) => inRange(task.createdAt)),
+    completed: tasks.filter((task) => task.status === "completed" && inRange(task.completedAt)),
+  };
 }

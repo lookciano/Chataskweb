@@ -2,7 +2,8 @@ import { useState, useMemo } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
-import { buildTaskTimeline } from "@shared/taskTimeline";
+import { buildReportTimeline, type ReportPeriod } from "@shared/taskTimeline";
+import { filterReportTasks } from "@shared/reportPeriod";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,6 +64,7 @@ export default function ProductivityReport() {
   const [showResponsibleFilter, setShowResponsibleFilter] = useState(false);
   const [selectedChartResponsibles, setSelectedChartResponsibles] = useState<string[]>([]);
   const [showChartResponsibleFilter, setShowChartResponsibleFilter] = useState(false);
+  const [period, setPeriod] = useState<ReportPeriod>("month");
 
   // Queries
   const roomsQuery = trpc.chat.rooms.useQuery(undefined, { enabled: !!user });
@@ -76,49 +78,55 @@ export default function ProductivityReport() {
     return tasksQuery.data as unknown as Task[];
   }, [tasksQuery.data]);
 
+  const reportLists = useMemo(() => filterReportTasks(tasks, period), [tasks, period]);
+  const reportCreatedTasks = reportLists.created as Task[];
+  const reportCompletedTasks = reportLists.completed as Task[];
+
+  const matchesReportFilters = (task: Task) => {
+    const matchesSearch = task.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (task.assignedToName?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false);
+    const matchesResponsible = selectedResponsibles.length === 0 ||
+      (task.assignedToName && selectedResponsibles.includes(task.assignedToName));
+    return matchesSearch && matchesResponsible;
+  };
+
+  const filteredCreatedTasks = useMemo(
+    () => reportCreatedTasks.filter(matchesReportFilters),
+    [reportCreatedTasks, searchQuery, selectedResponsibles],
+  );
+  const filteredCompletedTasks = useMemo(
+    () => reportCompletedTasks.filter(matchesReportFilters),
+    [reportCompletedTasks, searchQuery, selectedResponsibles],
+  );
+  const reportVisibleTasks = useMemo(
+    () => [...filteredCreatedTasks, ...filteredCompletedTasks.filter((task) => !filteredCreatedTasks.some((created) => created.id === task.id))],
+    [filteredCreatedTasks, filteredCompletedTasks],
+  );
+  const periodLabel = period === "week" ? "Últimos 7 dias" : period === "month" ? "Últimos 30 dias" : period === "quarter" ? "Últimos 90 dias" : "Todo o período";
+
   const allResponsibles = useMemo(() => {
     const responsibles = new Set<string>();
-    tasks.forEach((task) => {
-      if (task.assignedToName) {
-        responsibles.add(task.assignedToName);
-      }
+    reportVisibleTasks.forEach((task) => {
+      if (task.assignedToName) responsibles.add(task.assignedToName);
     });
     return Array.from(responsibles).sort();
-  }, [tasks]);
+  }, [reportVisibleTasks]);
 
   const timelineData = useMemo(() => {
-    const filteredTasksForChart = selectedChartResponsibles.length === 0
+    const chartTasks = selectedChartResponsibles.length === 0
       ? tasks
       : tasks.filter(task => task.assignedToName && selectedChartResponsibles.includes(task.assignedToName));
-    return buildTaskTimeline(filteredTasksForChart);
-  }, [tasks, selectedChartResponsibles]);
+    return buildReportTimeline(chartTasks, period);
+  }, [tasks, period, selectedChartResponsibles]);
 
-  const filteredTasks = useMemo(() => {
-    return tasks.filter((task) => {
-      const matchesSearch =
-        task.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (task.assignedToName?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false);
-
-      const matchesResponsible =
-        selectedResponsibles.length === 0 ||
-        (task.assignedToName && selectedResponsibles.includes(task.assignedToName));
-
-      return matchesSearch && matchesResponsible;
-    });
-  }, [tasks, searchQuery, selectedResponsibles]);
-
-  const pendingTasks = useMemo(() => {
-    return filteredTasks.filter((t) => t.status === "pending");
-  }, [filteredTasks]);
-
-  const completedTasks = useMemo(() => {
-    return filteredTasks.filter((t) => t.status === "completed");
-  }, [filteredTasks]);
+  const createdTasks = filteredCreatedTasks;
+  const pendingTasks = filteredCreatedTasks.filter((task) => task.status === "pending");
+  const completedTasks = filteredCompletedTasks;
 
   const participantMetrics = useMemo(() => {
     const metrics: Record<string, ParticipantMetrics> = {};
 
-    tasks.forEach((task) => {
+    reportVisibleTasks.forEach((task) => {
       const responsible = task.assignedToName || "Sem responsável";
       if (!metrics[responsible]) {
         metrics[responsible] = {
@@ -144,7 +152,7 @@ export default function ProductivityReport() {
     });
 
     return Object.values(metrics).sort((a, b) => b.total - a.total);
-  }, [tasks]);
+  }, [reportVisibleTasks]);
 
   const chartData = useMemo(() => {
     return participantMetrics.map((metric) => ({
@@ -229,8 +237,8 @@ export default function ProductivityReport() {
           <p className="text-slate-600 ml-12">Acompanhe o desempenho das tarefas por participante</p>
         </div>
 
-        {/* Room Selector */}
-        <div className="mb-8">
+        {/* Shared filters: one period controls cards, lists and both chart series. */}
+        <div className="mb-8 flex flex-wrap gap-4">
           <Select value={selectedRoom?.toString()} onValueChange={(v) => setSelectedRoom(parseInt(v))}>
             <SelectTrigger className="w-full md:w-64 bg-white border-slate-200 border-2">
               <SelectValue placeholder="Selecione uma sala" />
@@ -243,6 +251,20 @@ export default function ProductivityReport() {
               ))}
             </SelectContent>
           </Select>
+          <Select value={period} onValueChange={(value) => setPeriod(value as ReportPeriod)}>
+            <SelectTrigger className="w-full md:w-56 bg-white border-slate-200 border-2">
+              <SelectValue placeholder="Período" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="week">Últimos 7 dias</SelectItem>
+              <SelectItem value="month">Últimos 30 dias</SelectItem>
+              <SelectItem value="quarter">Últimos 90 dias</SelectItem>
+              <SelectItem value="all">Todo o período</SelectItem>
+            </SelectContent>
+          </Select>
+          <Badge variant="outline" className="h-10 px-3 flex items-center text-slate-600">
+            {periodLabel}
+          </Badge>
         </div>
 
         {selectedRoom && (
@@ -253,7 +275,7 @@ export default function ProductivityReport() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-slate-600 mb-1">Total de Tarefas</p>
-                    <p className="text-3xl font-bold text-slate-900">{tasks.length}</p>
+                    <p className="text-3xl font-bold text-slate-900">{reportVisibleTasks.length}</p>
                   </div>
                   <div className="p-3 bg-slate-100 rounded-lg">
                     <Target className="w-6 h-6 text-slate-600" />
@@ -290,7 +312,7 @@ export default function ProductivityReport() {
                   <div>
                     <p className="text-sm text-slate-600 mb-1">Taxa de Conclusão</p>
                     <p className="text-3xl font-bold text-teal-600">
-                      {tasks.length > 0 ? Math.round((completedTasks.length / tasks.length) * 100) : 0}%
+                      {reportVisibleTasks.length > 0 ? Math.round((completedTasks.length / reportVisibleTasks.length) * 100) : 0}%
                     </p>
                   </div>
                   <div className="p-3 bg-teal-100 rounded-lg">
@@ -537,8 +559,8 @@ export default function ProductivityReport() {
                     value="pending"
                     className="rounded-none border-b-2 border-transparent data-[state=active]:border-teal-600 data-[state=active]:bg-white"
                   >
-                    <Circle className="w-4 h-4 mr-2 text-orange-500" />
-                    Pendentes ({pendingTasks.length})
+                    <Calendar className="w-4 h-4 mr-2 text-teal-600" />
+                    Criadas ({createdTasks.length})
                   </TabsTrigger>
                   <TabsTrigger
                     value="completed"
@@ -550,20 +572,20 @@ export default function ProductivityReport() {
                 </TabsList>
 
                 <TabsContent value="pending" className="p-6">
-                  {pendingTasks.length === 0 ? (
+                  {createdTasks.length === 0 ? (
                     <div className="text-center py-12">
-                      <CheckCircle2 className="w-12 h-12 text-green-600 mx-auto mb-4" />
-                      <p className="text-slate-600">Nenhuma tarefa pendente!</p>
+                      <Calendar className="w-12 h-12 text-slate-400 mx-auto mb-4" />
+                      <p className="text-slate-600">Nenhuma tarefa criada no período.</p>
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      {pendingTasks.map((task) => (
+                      {createdTasks.map((task) => (
                         <Card key={task.id} className="border-slate-200 hover:shadow-md transition-shadow">
                           <div className="p-4">
                             <div className="flex items-start justify-between gap-4">
                               <div className="flex-1">
                                 <div className="flex items-center gap-2 mb-2">
-                                  <span className="font-semibold text-slate-900">Tarefa #{task.id}</span>
+                                  <span className="font-semibold text-slate-900">Tarefa #{task.taskNumber || task.id}</span>
                                   <Badge variant="outline" className={getPriorityColor(task.priority)}>
                                     {getPriorityLabel(task.priority)}
                                   </Badge>
