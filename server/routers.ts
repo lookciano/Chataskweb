@@ -34,15 +34,13 @@ function toPublicUser(user: any) {
 
 async function assertRoomAccess(
   ctx: { user: { id: number; role?: string | null } | null },
-  chatRoomId: number,
-  opts?: { allowAdminBypass?: boolean }
+  chatRoomId: number
 ) {
   if (!ctx.user) {
     throw new TRPCError({ code: "UNAUTHORIZED", message: "Selecione sua identidade para continuar" });
   }
-  const isGlobalAdmin = ctx.user.role === "admin";
-  if (opts?.allowAdminBypass !== false && isGlobalAdmin) return;
-  const ok = await db.isRoomMember(chatRoomId, ctx.user.id, { isGlobalAdmin });
+  // Every room operation requires explicit membership, including for platform admins.
+  const ok = await db.isRoomMember(chatRoomId, ctx.user.id);
   if (!ok) {
     throw new TRPCError({
       code: "FORBIDDEN",

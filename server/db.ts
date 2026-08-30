@@ -389,35 +389,39 @@ export async function createChatRoom(input: InsertChatRoom) {
  * - Others: rooms where they are in chatRoomParticipants OR roomMembers(approved)
  * Includes WhatsApp-style unreadCount (messages after lastRead, not from self).
  */
-export async function getChatRoomsForUser(userId: number, isGlobalAdmin = false) {
+export async function getChatRoomsForUser(userId: number, _isGlobalAdmin = false) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  let rooms: any[];
-  if (isGlobalAdmin) {
-    rooms = await db.select().from(chatRooms).orderBy(desc(chatRooms.updatedAt));
-  } else {
-    const participantRooms = await db
-      .select({ chatRoomId: chatRoomParticipants.chatRoomId })
-      .from(chatRoomParticipants)
-      .where(eq(chatRoomParticipants.userId, userId));
+  // Every user, including platform administrators, sees only rooms where
+  // they have explicit membership. The legacy creator fallback below keeps
+  // access for rooms created before roomMembers was introduced.
+  const participantRooms = await db
+    .select({ chatRoomId: chatRoomParticipants.chatRoomId })
+    .from(chatRoomParticipants)
+    .where(eq(chatRoomParticipants.userId, userId));
 
-    const memberRooms = await db
-      .select({ chatRoomId: roomMembers.chatRoomId })
-      .from(roomMembers)
-      .where(and(eq(roomMembers.userId, userId), eq(roomMembers.status, "approved")));
+  const memberRooms = await db
+    .select({ chatRoomId: roomMembers.chatRoomId })
+    .from(roomMembers)
+    .where(and(eq(roomMembers.userId, userId), eq(roomMembers.status, "approved")));
 
-    const ids = Array.from(
-      new Set([
-        ...participantRooms.map((r: { chatRoomId: number }) => r.chatRoomId),
-        ...memberRooms.map((r: { chatRoomId: number }) => r.chatRoomId),
-      ])
-    );
+  const createdRooms = await db
+    .select({ chatRoomId: chatRooms.id })
+    .from(chatRooms)
+    .where(eq(chatRooms.createdBy, userId));
 
-    if (!ids.length) return [];
-    const all = await db.select().from(chatRooms).orderBy(desc(chatRooms.updatedAt));
-    rooms = all.filter((r: { id: number }) => ids.includes(r.id));
-  }
+  const ids = Array.from(
+    new Set([
+      ...participantRooms.map((r: { chatRoomId: number }) => r.chatRoomId),
+      ...memberRooms.map((r: { chatRoomId: number }) => r.chatRoomId),
+      ...createdRooms.map((r: { chatRoomId: number }) => r.chatRoomId),
+    ])
+  );
+
+  if (!ids.length) return [];
+  const all = await db.select().from(chatRooms).orderBy(desc(chatRooms.updatedAt));
+  const rooms = all.filter((r: { id: number }) => ids.includes(r.id));
 
   if (!rooms.length) return [];
 
@@ -587,8 +591,7 @@ export async function isRoomMember(
   return Boolean(asMember[0]);
 }
 
-export async function isRoomAdmin(chatRoomId: number, userId: number, isGlobalAdmin = false): Promise<boolean> {
-  if (isGlobalAdmin) return true;
+export async function isRoomAdmin(chatRoomId: number, userId: number, _isGlobalAdmin = false): Promise<boolean> {
   const db = await getDb();
   if (!db) return false;
   const rows = await db

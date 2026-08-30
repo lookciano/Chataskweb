@@ -219,8 +219,7 @@ export default function ChatApp() {
     roomAdminIds.includes(userId) || Number(selectedRoomData?.createdBy) === Number(userId);
   const canManageRoom =
     !!user &&
-    (user.role === "admin" ||
-      isRoomAdminParticipant(user.id));
+    isRoomAdminParticipant(user.id);
   const candidateMembersQuery = trpc.chat.listCandidateMembers.useQuery(
     { chatRoomId: selectedRoom || 0 },
     { enabled: !!selectedRoom && !!user && showParticipantsModal && canManageRoom }
