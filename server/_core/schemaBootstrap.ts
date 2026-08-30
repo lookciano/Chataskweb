@@ -161,18 +161,9 @@ export async function ensureProductionSchema(connection: Connection): Promise<vo
     console.warn("[SchemaBootstrap] assignedToId backfill skipped:", error);
   }
 
-  // Historical completed tasks: approximate completion time with updatedAt once.
-  try {
-    await connection.execute(`
-      UPDATE tasks
-      SET completedAt = updatedAt
-      WHERE status = 'completed'
-        AND completedAt IS NULL
-        AND updatedAt IS NOT NULL
-    `);
-  } catch (error) {
-    console.warn("[SchemaBootstrap] completedAt backfill skipped:", error);
-  }
-
+  // Do not infer historical completion dates from updatedAt. A task edit or
+  // migration can update that column without representing task completion.
+  // Existing completedAt values remain untouched; historical recovery must use
+  // a verified backup/audit source rather than an automatic data rewrite.
   console.log("[SchemaBootstrap] Done (data-preserving).");
 }
