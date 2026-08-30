@@ -1,4 +1,4 @@
-import { invokeLLM } from "./_core/llm";
+import { invokeLLM, truncateText } from "./_core/llm";
 import { normalizeName } from "../shared/normalizeNames";
 
 interface AssignmentDetection {
@@ -14,10 +14,8 @@ export async function detectTaskAssignmentInMessage(
   allTasks: Array<{ id: number; taskNumber: number; description: string; assignedToName?: string }>,
   contextStr: string
 ): Promise<AssignmentDetection[]> {
-  console.log("[ASSIGNMENT_DETECTOR] Analyzing message:", messageContent);
-
   const tasksSummary = allTasks
-    .map((t) => `Task ${t.taskNumber}: "${t.description}" (currently assigned to: ${t.assignedToName || "nobody"})`)
+    .map((t) => `Task ${t.taskNumber}: "${truncateText(t.description, 1000)}" (currently assigned to: ${truncateText(t.assignedToName || "nobody", 200)})`)
     .join("\n");
 
   try {
@@ -58,15 +56,15 @@ Guidelines:
         {
           role: "user",
           content: `Active Tasks:
-${tasksSummary}
+${truncateText(tasksSummary, 5000)}
 
 Recent Conversation Context:
-${contextStr}
+${truncateText(contextStr, 5000)}
 
 New Message to Analyze:
-"${messageContent}"
+"${truncateText(messageContent)}"
 
-Detect any task assignments indicated in this message.`,
+Detect any task assignments indicated in this message.`
         },
       ],
       response_format: {
@@ -99,11 +97,10 @@ Detect any task assignments indicated in this message.`,
       },
     });
 
-    console.log("[ASSIGNMENT_DETECTOR] LLM Response:", response);
+
 
     const content = response.choices?.[0]?.message?.content;
     if (!content) {
-      console.log("[ASSIGNMENT_DETECTOR] No content in response");
       return [];
     }
 
@@ -113,21 +110,18 @@ Detect any task assignments indicated in this message.`,
     } else if (Array.isArray(content)) {
       const textItem = (content as any[]).find((c: any) => c.type === "text") as any;
       if (!textItem || !textItem.text) {
-        console.log("[ASSIGNMENT_DETECTOR] No text in content array");
         return [];
       }
       jsonContent = textItem.text;
     } else {
-      console.log("[ASSIGNMENT_DETECTOR] Invalid content type");
       return [];
     }
 
     const parsed = JSON.parse(jsonContent);
-    console.log("[ASSIGNMENT_DETECTOR] Parsed response:", JSON.stringify(parsed, null, 2));
+
 
     const assignments = parsed.assignments || parsed;
     if (!Array.isArray(assignments)) {
-      console.log("[ASSIGNMENT_DETECTOR] Response is not an array");
       return [];
     }
 
@@ -138,7 +132,7 @@ Detect any task assignments indicated in this message.`,
         item.taskNumber &&
         item.assignedTo
     );
-    console.log("[ASSIGNMENT_DETECTOR] Filtered assignments (confidence >= 0.6):", JSON.stringify(filtered, null, 2));
+
 
     return filtered.map((a: any) => ({
       isAssignment: true,
@@ -148,7 +142,7 @@ Detect any task assignments indicated in this message.`,
       reason: a.reason,
     }));
   } catch (error) {
-    console.error("[ASSIGNMENT_DETECTOR] Error:", error);
+    console.error("[ASSIGNMENT_DETECTOR] Error", error instanceof Error ? error.name : "unknown");
     return [];
   }
 }

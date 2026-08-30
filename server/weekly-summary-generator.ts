@@ -1,4 +1,4 @@
-import { invokeLLM } from "./_core/llm";
+import { invokeLLM, truncateText } from "./_core/llm";
 
 export interface WeeklySummaryTask {
   id: number;
@@ -58,14 +58,14 @@ function buildSummaryPrompt(data: WeeklySummaryData): string {
   const responsibleSections = data.responsibles.map((responsible) => {
     const tasks = responsible.tasks.map((task) => {
       const status = task.status === "completed" ? "CONCLUÍDA" : task.status === "pending" ? "PENDENTE" : "CANCELADA";
-      return `- Tarefa ${task.taskNumber} [${status}]: ${task.description}`;
+      return `- Tarefa ${task.taskNumber} [${status}]: ${truncateText(task.description, 2000)}`;
     }).join("\n");
-    return `RESPONSÁVEL: ${responsible.name}\nEstatísticas: total=${responsible.total}; concluídas=${responsible.completed}; pendentes=${responsible.pending}; canceladas=${responsible.cancelled}; taxa de conclusão=${responsible.total ? ((responsible.completed / responsible.total) * 100).toFixed(1) : "0.0"}%\nAtividades:\n${tasks}`;
+    return `RESPONSÁVEL: ${truncateText(responsible.name, 200)}\nEstatísticas: total=${responsible.total}; concluídas=${responsible.completed}; pendentes=${responsible.pending}; canceladas=${responsible.cancelled}; taxa de conclusão=${responsible.total ? ((responsible.completed / responsible.total) * 100).toFixed(1) : "0.0"}%\nAtividades:\n${truncateText(tasks, 12000)}`;
   }).join("\n\n");
 
   return `Você é um analista de controle de tarefas. Gere um relatório semanal analítico, direto e preciso, sem avaliar pessoas, sem elogios, críticas, comentários sobre desempenho e sem recomendações genéricas.
 
-Sala: ${data.roomName}
+Sala: ${truncateText(data.roomName, 200)}
 Período: ${date(data.weekStart)} a ${date(data.weekEnd)}
 
 ESTATÍSTICAS DA SALA

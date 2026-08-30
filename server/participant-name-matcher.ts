@@ -1,4 +1,4 @@
-import { invokeLLM } from "./_core/llm";
+import { invokeLLM, truncateText } from "./_core/llm";
 
 /**
  * Normalize a string for comparison by removing accents, converting to lowercase, and trimming
@@ -97,7 +97,7 @@ Return ONLY the participant name or "NO_MATCH", nothing else.`,
           content: `Mentioned name: "${mentionedName}"
           
 Participant list:
-${participants.map((p, i) => `${i + 1}. ${p}`).join('\n')}
+${truncateText(participants.map((p, i) => `${i + 1}. ${p}`).join('\n'), 3000)}
 
 Which participant does the mentioned name refer to? Return ONLY the exact participant name or "NO_MATCH".`,
         },
@@ -116,7 +116,7 @@ Which participant does the mentioned name refer to? Return ONLY the exact partic
     const match = participants.find(p => normalizeForComparison(p) === normalizeForComparison(result));
     return match;
   } catch (error) {
-    console.error("Error in LLM name matching:", error);
+    console.error("Error in LLM name matching:", error instanceof Error ? error.name : "unknown");
     return undefined;
   }
 }
@@ -134,42 +134,42 @@ export async function findBestParticipantMatch(
   participants: string[]
 ): Promise<string | undefined> {
   if (!mentionedName || participants.length === 0) {
-    console.log("[NAME_MATCHER] No mentioned name or participants", { mentionedName, participantsCount: participants.length });
+    console.log("[NAME_MATCHER] No mentioned name or participants", { participantsCount: participants.length });
     return undefined;
   }
   
-  console.log("[NAME_MATCHER] Starting match for:", { mentionedName, participants });
+  console.log("[NAME_MATCHER] Starting match", { participantsCount: participants.length });
   
   // Strategy 1: Exact match
   const exactMatch = findExactMatch(mentionedName, participants);
   if (exactMatch) {
-    console.log("[NAME_MATCHER] Found exact match:", { mentionedName, exactMatch });
+    console.log("[NAME_MATCHER] Found exact match");
     return exactMatch;
   }
   
   // Strategy 2: First name match
   const firstNameMatch = findFirstNameMatch(mentionedName, participants);
   if (firstNameMatch) {
-    console.log("[NAME_MATCHER] Found first name match:", { mentionedName, firstNameMatch });
+    console.log("[NAME_MATCHER] Found first name match");
     return firstNameMatch;
   }
   
   // Strategy 3: Partial match
   const partialMatch = findPartialMatch(mentionedName, participants);
   if (partialMatch) {
-    console.log("[NAME_MATCHER] Found partial match:", { mentionedName, partialMatch });
+    console.log("[NAME_MATCHER] Found partial match");
     return partialMatch;
   }
   
   // Strategy 4: LLM-based matching (most intelligent but slower)
-  console.log("[NAME_MATCHER] Trying LLM match for:", mentionedName);
+  console.log("[NAME_MATCHER] Trying LLM match");
   const llmMatch = await findLLMMatch(mentionedName, participants);
   if (llmMatch) {
-    console.log("[NAME_MATCHER] Found LLM match:", { mentionedName, llmMatch });
+    console.log("[NAME_MATCHER] Found LLM match");
     return llmMatch;
   }
   
-  console.log("[NAME_MATCHER] No match found for:", { mentionedName, participants });
+  console.log("[NAME_MATCHER] No match found", { participantsCount: participants.length });
   return undefined;
 }
 
@@ -192,7 +192,7 @@ export async function validateAndNormalizeAssignedPerson(
   }
   
   // No match found
-  console.warn(`No participant found matching "${assignedName}". Available: ${roomParticipants.join(', ')}`);
+  console.warn("No participant found for requested assignment", { participantsCount: roomParticipants.length });
   return undefined;
 }
 

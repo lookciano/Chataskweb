@@ -31,7 +31,6 @@ export async function handleWeeklySummarySchedule(req: Request, res: Response) {
         const tasks = await db.getTasksForSummary(room.id, lastSunday, reportEnd);
         
         if (tasks.length === 0) {
-          console.log(`[WEEKLY_SUMMARY_SCHEDULE] No tasks for room ${room.name}, skipping`);
           results.push({
             roomId: room.id,
             roomName: room.name,
@@ -61,7 +60,6 @@ export async function handleWeeklySummarySchedule(req: Request, res: Response) {
           content: messageContent,
         });
 
-        console.log(`[WEEKLY_SUMMARY_SCHEDULE] Summary sent to room ${room.name}`);
 
         results.push({
           roomId: room.id,
@@ -72,7 +70,6 @@ export async function handleWeeklySummarySchedule(req: Request, res: Response) {
           pendingCount: summaryData.pendingTasks,
         });
       } catch (error) {
-        console.error(`[WEEKLY_SUMMARY_SCHEDULE] Error for room ${room.name}:`, error);
         results.push({
           roomId: room.id,
           roomName: room.name,
@@ -82,7 +79,7 @@ export async function handleWeeklySummarySchedule(req: Request, res: Response) {
       }
     }
 
-    console.log("[WEEKLY_SUMMARY_SCHEDULE] Completed", results);
+    console.log(`[WEEKLY_SUMMARY_SCHEDULE] Completed: ${results.length} rooms processed`);
     res.json({
       ok: true,
       timestamp: new Date().toISOString(),
@@ -90,7 +87,7 @@ export async function handleWeeklySummarySchedule(req: Request, res: Response) {
       results,
     });
   } catch (error) {
-    console.error("[WEEKLY_SUMMARY_SCHEDULE] Fatal error:", error);
+    console.error("[WEEKLY_SUMMARY_SCHEDULE] Fatal error", error instanceof Error ? error.name : "unknown");
     res.status(500).json({
       error: "Erro interno ao processar o relatório semanal",
     });

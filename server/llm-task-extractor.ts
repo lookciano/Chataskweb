@@ -1,4 +1,4 @@
-import { invokeLLM } from "./_core/llm";
+import { invokeLLM, truncateText } from "./_core/llm";
 import { cleanTaskDescription, resolveTaskAssignee } from "./assignee-from-message";
 
 // Dicionário de correções ortográficas comuns em português do Brasil
@@ -56,7 +56,7 @@ Return ONLY the corrected text, nothing else. No explanations or markdown.`,
           role: "user",
           content: `Correct this Portuguese text for spelling, grammar, and clarity. DO NOT summarize or shorten the text - keep ALL original information complete:
 
-"${text}"`,
+"${truncateText(text)}"`,
         },
       ],
     });
@@ -67,7 +67,7 @@ Return ONLY the corrected text, nothing else. No explanations or markdown.`,
     }
     return text;
   } catch (error) {
-    console.error("Error correcting spelling with LLM:", error);
+    console.error("Error correcting spelling with LLM:", error instanceof Error ? error.name : "unknown");
     // Fallback to basic correction
     return correctPortugueseSpellingBasic(text);
   }
@@ -199,7 +199,7 @@ Guidelines:
         },
         {
           role: "user",
-          content: `Analyze this single message (at most one task):\n\n"${originalMessage}"\n\nSender (author of the bubble — not automatically the assignee): ${senderName}\nRoom participants: ${rosterCsv}`,
+          content: `Analyze this single message (at most one task):\n\n"${truncateText(originalMessage)}"\n\nSender (author of the bubble — not automatically the assignee): ${truncateText(senderName, 200)}\nRoom participants: ${truncateText(rosterCsv, 3000)}`,
         },
       ],
       response_format: {
@@ -248,7 +248,7 @@ Guidelines:
 
     const parsed = JSON.parse(jsonContent);
     const tasks = (parsed.tasks || []) as ExtractedTask[];
-    console.log("[LLM_EXTRACTION] Raw LLM response:", { messageContent: originalMessage, tasks });
+
 
     // Hard limit: never more than one task per chat message
     const candidate = tasks.find((t) => t && t.isTask) || tasks[0];
@@ -263,7 +263,7 @@ Guidelines:
       senderName,
       roomParticipants,
     });
-    console.log("[TASK_EXTRACTOR] Assignee resolved:", resolved);
+
 
     // Prefer LLM short work description when present; always strip assignee wrappers.
     // Fall back to spell-corrected full message if LLM left placeholder/empty.
@@ -289,16 +289,15 @@ Guidelines:
       priority: candidate.priority || "medium",
     };
 
-    console.log("[TASK_EXTRACTOR] Final single task:", {
+    console.log("[TASK_EXTRACTOR] Final single task", {
       descriptionLength: singleTask.description.length,
-      description: singleTask.description,
-      assignedTo: singleTask.assignedTo,
-      assigneeSource: resolved.source,
+      hasAssignee: Boolean(singleTask.assignedTo),
+      priority: singleTask.priority,
     });
 
     return [singleTask];
   } catch (error) {
-    console.error("Error extracting tasks from message:", error);
+    console.error("Error extracting tasks from message:", error instanceof Error ? error.name : "unknown");
     return [];
   }
 }

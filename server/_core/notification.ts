@@ -30,7 +30,7 @@ function initFirebase(): boolean {
     console.log("[FCM] Firebase Admin SDK inicializado");
     return true;
   } catch (error) {
-    console.warn("[FCM] Erro ao inicializar Firebase:", error);
+    console.warn("[FCM] Erro ao inicializar Firebase", error instanceof Error ? error.name : "unknown");
     return false;
   }
 }
@@ -45,7 +45,6 @@ export async function sendPushNotificationForMessage(
   messageContent: string
 ) {
   try {
-    console.log(`[FCM] Iniciando push: room=${chatRoomId}, sender=${senderId}, name=${senderName}`);
     const fbOk = initFirebase();
     console.log(`[FCM] Firebase initialized: ${fbOk}`);
     if (!fbOk) {
@@ -55,10 +54,8 @@ export async function sendPushNotificationForMessage(
 
     const room = await getChatRoomById(chatRoomId);
     const roomName = room?.name || "Sala";
-    console.log(`[FCM] Room: ${roomName}`);
 
     const tokenRecords = await getDeviceTokensForRoom(chatRoomId, senderId);
-    console.log(`[FCM] Tokens found: ${tokenRecords.length}`, tokenRecords.map((t: {userId: number}) => t.userId));
     if (tokenRecords.length === 0) {
       console.log("[FCM] No tokens — no one to notify (sender excluded or no members with tokens)");
       return;
@@ -112,13 +109,12 @@ export async function sendPushNotificationForMessage(
     if (response.failureCount > 0) {
       response.responses.forEach((resp, idx) => {
         if (!resp.success) {
-          console.warn(`[FCM] Token ${idx} falhou:`, resp.error?.message, resp.error?.code);
+          console.warn(`[FCM] Token ${idx} falhou`, resp.error?.code);
         }
       });
     }
   } catch (error: any) {
-    console.warn("[FCM] Erro ao enviar push:", error?.message || error);
-    console.warn("[FCM] Stack:", error?.stack);
+    console.warn("[FCM] Erro ao enviar push", error instanceof Error ? error.name : "unknown");
   }
 }
 

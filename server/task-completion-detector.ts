@@ -1,4 +1,4 @@
-import { invokeLLM } from "./_core/llm";
+import { invokeLLM, truncateText } from "./_core/llm";
 
 export interface TaskCompletionDetection {
   taskNumber: number;
@@ -18,11 +18,7 @@ export async function detectTaskCompletionInMessage(
   }>,
   conversationContext: string
 ): Promise<TaskCompletionDetection[]> {
-  console.log("[TASK_COMPLETION_DETECTOR] Starting detection");
-  console.log("[TASK_COMPLETION_DETECTOR] Message:", messageContent);
-  console.log("[TASK_COMPLETION_DETECTOR] Tasks count:", allTasks.length);
   if (allTasks.length === 0) {
-    console.log("[TASK_COMPLETION_DETECTOR] No tasks to check");
     return [];
   }
 
@@ -31,7 +27,7 @@ export async function detectTaskCompletionInMessage(
     const tasksSummary = allTasks
       .map(
         (t) =>
-          `Task ${t.taskNumber}: "${t.description}" (current status: ${t.status})`
+          `Task ${t.taskNumber}: "${truncateText(t.description, 1000)}" (current status: ${t.status})`
       )
       .join("\n");
 
@@ -76,13 +72,13 @@ Guidelines:
         {
           role: "user",
           content: `Active Tasks:
-${tasksSummary}
+${truncateText(tasksSummary, 5000)}
 
 Recent Conversation Context:
-${conversationContext}
+${truncateText(conversationContext, 5000)}
 
 New Message to Analyze:
-"${messageContent}"
+"${truncateText(messageContent)}"
 
 Detect any task status changes indicated in this message.`,
         },
@@ -136,10 +132,9 @@ Detect any task status changes indicated in this message.`,
     }
 
     const parsed = JSON.parse(jsonContent);
-    console.log("[TASK_COMPLETION_DETECTOR] LLM Response parsed:", JSON.stringify(parsed, null, 2));
+
     const completions = parsed.completions || parsed;
     if (!Array.isArray(completions)) {
-      console.log("[TASK_COMPLETION_DETECTOR] Response is not an array");
       return [];
     }
 
@@ -151,10 +146,10 @@ Detect any task status changes indicated in this message.`,
         item.taskNumber &&
         item.newStatus
     );
-    console.log("[TASK_COMPLETION_DETECTOR] Filtered detections (confidence >= 0.6):", JSON.stringify(filtered, null, 2));
+
     return filtered;
   } catch (error) {
-    console.error("Error detecting task completion:", error);
+    console.error("Error detecting task completion:", error instanceof Error ? error.name : "unknown");
     return [];
   }
 }

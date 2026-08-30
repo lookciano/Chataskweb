@@ -799,8 +799,10 @@ export const appRouter = router({
         await assertRoomAccess(ctx, input.chatRoomId);
         // Get room participants to map mentioned names
         const participants = await db.getParticipants(input.chatRoomId);
-        const participantNames = participants.map((p: any) => p.displayName).filter(Boolean) as string[];
-        
+        const participantNames = participants
+          .map((p: any) => p.displayName || p.userName)
+          .filter(Boolean) as string[];
+
         const extracted = await extractTasksFromMessage(
           input.messageContent,
           db.resolveUserDisplayName(ctx.user),
@@ -826,19 +828,24 @@ export const appRouter = router({
           }
         }
 
-        const assigneeName =
-          (task.assignedTo || "").trim() || db.resolveUserDisplayName(ctx.user);
-        // Bind historical person id when possible (same name → same user row)
-        const matchedUser = await db.findUserByIdentityName(assigneeName);
+        const requestedAssignee = (task.assignedTo || "").trim();
+        const senderName = db.resolveUserDisplayName(ctx.user);
+        const participantMatch = requestedAssignee
+          ? participants.find((p: any) =>
+              normalizeName(p.displayName || p.userName || "") === normalizeName(requestedAssignee)
+            )
+          : undefined;
+        const assigneeName = participantMatch
+          ? (participantMatch.displayName || participantMatch.userName)
+          : senderName;
+        const assignedToId = participantMatch?.userId ?? ctx.user.id;
 
         const created = await db.createTask({
           messageId: 0,
           chatRoomId: input.chatRoomId,
           creatorId: ctx.user.id,
-          assignedToId: matchedUser?.id,
-          assignedToName: matchedUser
-            ? (matchedUser.displayName || matchedUser.name || assigneeName)
-            : assigneeName,
+          assignedToId,
+          assignedToName: assigneeName,
           // Full chat message (spell-corrected) becomes the task description
           description: task.description,
           dueDate: dueDate,
@@ -887,11 +894,8 @@ export const appRouter = router({
       }))
       .mutation(async ({ input, ctx }) => {
         await assertRoomAccess(ctx, input.chatRoomId);
-        console.log("[ROUTER] detectCompletionInMessage called with:", { chatRoomId: input.chatRoomId, messageContent: input.messageContent });
         const allTasks = await db.getTasksWithDetails(input.chatRoomId);
-        console.log("[ROUTER] Found tasks:", allTasks.length);
         if (allTasks.length === 0) {
-          console.log("[ROUTER] No tasks found, returning empty");
           return { success: true, updated: [] };
         }
 
@@ -911,18 +915,12 @@ export const appRouter = router({
           contextStr
         );
 
-        console.log("[DETECT_COMPLETION] Detections received:", JSON.stringify(detections, null, 2));
         const updated = [];
         for (const detection of detections) {
-          console.log("[DETECT_COMPLETION] Processing detection:", detection);
           if (detection.confidence >= 0.6) {
-            console.log("[DETECT_COMPLETION] Confidence OK, looking for task number:", detection.taskNumber);
             const task = await db.getTaskByNumber(input.chatRoomId, detection.taskNumber);
-            console.log("[DETECT_COMPLETION] Task found:", task);
             if (task) {
-              console.log("[DETECT_COMPLETION] Updating task", task.id, "to status:", detection.newStatus);
               await db.updateTaskStatus(task.id, detection.newStatus);
-              console.log("[DETECT_COMPLETION] Task updated successfully");
               updated.push({
                 taskNumber: detection.taskNumber,
                 newStatus: detection.newStatus,
@@ -932,7 +930,6 @@ export const appRouter = router({
           }
         }
 
-        console.log("[DETECT_COMPLETION] Final result:", { success: true, updated });
         return { success: true, updated };
       }),
     deleteTask: protectedProcedure
@@ -958,11 +955,8 @@ export const appRouter = router({
       }))
       .mutation(async ({ input, ctx }) => {
         await assertRoomAccess(ctx, input.chatRoomId);
-        console.log("[ROUTER] detectAssignmentInMessage called with:", { chatRoomId: input.chatRoomId, messageContent: input.messageContent });
         const allTasks = await db.getTasksWithDetails(input.chatRoomId);
-        console.log("[ROUTER] Found tasks:", allTasks.length);
         if (allTasks.length === 0) {
-          console.log("[ROUTER] No tasks found, returning empty");
           return { success: true, updated: [] };
         }
 
@@ -982,29 +976,23 @@ export const appRouter = router({
           contextStr
         );
 
-        console.log("[ASSIGNMENT_DETECTOR] Assignments received:", JSON.stringify(assignments, null, 2));
         const updated = [];
 
         for (const assignment of assignments) {
-          console.log("[ASSIGNMENT_DETECTOR] Processing assignment:", assignment);
           if (assignment.confidence >= 0.6 && assignment.taskNumber && assignment.assignedTo) {
-            console.log("[ASSIGNMENT_DETECTOR] Confidence OK, looking for task number:", assignment.taskNumber);
             const task = await db.getTaskByNumber(input.chatRoomId, assignment.taskNumber);
-            console.log("[ASSIGNMENT_DETECTOR] Task found:", task);
             if (task) {
               const participants = await db.getParticipants(input.chatRoomId);
-              console.log("[ASSIGNMENT_DETECTOR] Participants:", participants.map((p: any) => p.displayName));
               
               const participantList = participants.map((p: any) => ({ name: p.displayName || p.userName }));
-              console.log("[ASSIGNMENT_DETECTOR] Matching:", assignment.assignedTo, "against", participantList);
+
               
               const matchedParticipant = findByNormalizedName(participantList, assignment.assignedTo);
-              console.log("[ASSIGNMENT_DETECTOR] Matched:", matchedParticipant);
+
               
-              const originalName = matchedParticipant?.name || assignment.assignedTo;
-              console.log("[ASSIGNMENT_DETECTOR] Final name:", originalName);
+              if (!matchedParticipant?.name) continue;
+              const originalName = matchedParticipant.name;
               await db.updateTaskAssignee(task.id, originalName);
-              console.log("[ASSIGNMENT_DETECTOR] Task updated successfully");
               updated.push({
                 taskNumber: assignment.taskNumber,
                 assignedTo: originalName,
@@ -1014,7 +1002,6 @@ export const appRouter = router({
           }
         }
 
-        console.log("[ASSIGNMENT_DETECTOR] Final result:", { success: true, updated });
         return { success: true, updated };
       }),
     validateParticipantNames: adminProcedure

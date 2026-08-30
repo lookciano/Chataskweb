@@ -1,4 +1,4 @@
-import { invokeLLM } from "./_core/llm";
+import { invokeLLM, truncateText } from "./_core/llm";
 
 export interface TaskStatusUpdate {
   taskId: number;
@@ -45,10 +45,10 @@ Guidelines:
         },
         {
           role: "user",
-          content: `Task: "${originalTaskDescription}"
+          content: `Task: "${truncateText(originalTaskDescription)}"
 Current Status: ${currentStatus}
-Response: "${responseContent}"
-Responder: ${responderName}
+Response: "${truncateText(responseContent)}"
+Responder: ${truncateText(responderName, 200)}
 
 Analyze if this response indicates a status change for the task.`,
         },
@@ -103,7 +103,7 @@ Analyze if this response indicates a status change for the task.`,
       reason: parsed.reason,
     };
   } catch (error) {
-    console.error("Error interpreting response for task update:", error);
+    console.error("Error interpreting response for task update:", error instanceof Error ? error.name : "unknown");
     return null;
   }
 }
