@@ -69,6 +69,12 @@ async function startServer() {
     next();
   });
 
+  // Public health check for Render and uptime monitors. It intentionally
+  // exposes no database status, configuration, secrets, or dependency data.
+  app.get("/api/health", (_req, res) => {
+    res.status(200).json({ ok: true });
+  });
+
   registerStorageProxy(app);
   // Rate-limit only abusive/high-risk entry points. Normal LLM task extraction
   // and spelling correction remain available because they are core features.
