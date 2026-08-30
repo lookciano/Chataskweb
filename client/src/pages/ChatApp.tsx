@@ -2371,6 +2371,41 @@ export default function ChatApp() {
     );
   }
 
+  const weeklySummaryDialog = (
+    <Dialog open={showSummaryModal} onOpenChange={setShowSummaryModal}>
+      <DialogContent className="w-[calc(100%-1rem)] max-w-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto p-4 sm:p-6" onOpenAutoFocus={(event) => event.preventDefault()}>
+        <DialogHeader>
+          <DialogTitle>Relatório Semanal</DialogTitle>
+          <DialogDescription>
+            O relatório considera somente as atividades concluídas nos últimos sete dias, separadas por responsável, com descrições completas.
+            {summaryStats && (
+              <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                <div className="bg-teal-50 p-2 rounded"><p className="text-gray-600">Total de Tarefas</p><p className="text-lg font-bold text-teal-600">{summaryStats.totalTasks}</p></div>
+                <div className="bg-green-50 p-2 rounded"><p className="text-gray-600">Concluídas</p><p className="text-lg font-bold text-green-600">{summaryStats.completedTasks}</p></div>
+                <div className="bg-yellow-50 p-2 rounded"><p className="text-gray-600">Pendentes</p><p className="text-lg font-bold text-yellow-600">{summaryStats.pendingTasks}</p></div>
+                <div className="bg-blue-50 p-2 rounded"><p className="text-gray-600">Taxa de Conclusão</p><p className="text-lg font-bold text-blue-600">{summaryStats.completionRate.toFixed(1)}%</p></div>
+              </div>
+            )}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="mt-4 p-4 bg-gray-50 rounded-lg whitespace-pre-wrap text-sm leading-relaxed">{weeklySummary}</div>
+        <DialogFooter>
+          <Button
+            onClick={() => {
+              if (selectedRoom) {
+                sendMessageMutation.mutate({ chatRoomId: selectedRoom, content: `📊 **RESUMO SEMANAL**\\n\\n${weeklySummary}` });
+                setShowSummaryModal(false);
+                toast.success("Resumo enviado para o chat!");
+              }
+            }}
+            className="bg-teal-600 hover:bg-teal-700"
+          >Enviar para o Chat</Button>
+          <Button variant="outline" onClick={() => setShowSummaryModal(false)}>Fechar</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
   // MOBILE VIEW
   if (isMobile) {
     return (
@@ -3263,6 +3298,7 @@ export default function ChatApp() {
             </Card>
           </div>
         )}
+        {weeklySummaryDialog}
         {newPersonalTaskDialog}
         {editPersonalTaskDialog}
       </div>
@@ -4160,62 +4196,7 @@ export default function ChatApp() {
         </DialogContent>
       </Dialog>
 
-      {/* Weekly Summary Modal */}
-      <Dialog open={showSummaryModal} onOpenChange={setShowSummaryModal}>
-        <DialogContent className="w-[calc(100%-1rem)] max-w-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto p-4 sm:p-6" onOpenAutoFocus={(event) => event.preventDefault()}>
-
-          <DialogHeader>
-            <DialogTitle>Relatório Semanal</DialogTitle>
-            <DialogDescription>
-              O relatório considera somente as atividades concluídas nos últimos sete dias, separadas por responsável, com descrições completas.
-              {summaryStats && (
-                <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                  <div className="bg-teal-50 p-2 rounded">
-                    <p className="text-gray-600">Total de Tarefas</p>
-                    <p className="text-lg font-bold text-teal-600">{summaryStats.totalTasks}</p>
-                  </div>
-                  <div className="bg-green-50 p-2 rounded">
-                    <p className="text-gray-600">Concluídas</p>
-                    <p className="text-lg font-bold text-green-600">{summaryStats.completedTasks}</p>
-                  </div>
-                  <div className="bg-yellow-50 p-2 rounded">
-                    <p className="text-gray-600">Pendentes</p>
-                    <p className="text-lg font-bold text-yellow-600">{summaryStats.pendingTasks}</p>
-                  </div>
-                  <div className="bg-blue-50 p-2 rounded">
-                    <p className="text-gray-600">Taxa de Conclusão</p>
-                    <p className="text-lg font-bold text-blue-600">{summaryStats.completionRate.toFixed(1)}%</p>
-                  </div>
-                </div>
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="mt-4 p-4 bg-gray-50 rounded-lg whitespace-pre-wrap text-sm leading-relaxed">
-            {weeklySummary}
-          </div>
-          <DialogFooter>
-            <Button
-              onClick={() => {
-                // Send summary as message
-                if (selectedRoom) {
-                  sendMessageMutation.mutate({
-                    chatRoomId: selectedRoom,
-                    content: `📊 **RESUMO SEMANAL**\n\n${weeklySummary}`,
-                  });
-                  setShowSummaryModal(false);
-                  toast.success("Resumo enviado para o chat!");
-                }
-              }}
-              className="bg-teal-600 hover:bg-teal-700"
-            >
-              Enviar para o Chat
-            </Button>
-            <Button variant="outline" onClick={() => setShowSummaryModal(false)}>
-              Fechar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {weeklySummaryDialog}
       {newPersonalTaskDialog}
       {editPersonalTaskDialog}
     </div>
