@@ -4,6 +4,7 @@ import { httpBatchLink } from "@trpc/client";
 import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import { Capacitor } from "@capacitor/core";
+import { getAuthSessionToken } from "@/_core/authSession";
 import App from "./App";
 import "./index.css";
 
@@ -44,15 +45,44 @@ const trpcUrl = isNativeRuntimeActive
   ? `${BACKEND_URL}/api/trpc`
   : "/api/trpc";
 
+function getRequestHeaders(headers?: HeadersInit): Headers {
+  const nextHeaders = new Headers(headers);
+  const sessionToken = getAuthSessionToken();
+
+  if (sessionToken && !nextHeaders.has("authorization")) {
+    nextHeaders.set("authorization", `Bearer ${sessionToken}`);
+  }
+
+  return nextHeaders;
+}
+
 const trpcClient = trpc.createClient({
   links: [
     httpBatchLink({
       url: trpcUrl,
       transformer: superjson,
       fetch(input, init) {
+        const requestUrl =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+
         return globalThis.fetch(input, {
           ...(init ?? {}),
           credentials: "include",
+          headers: getRequestHeaders(init?.headers),
+        }).catch((error) => {
+          console.error("[ChatTask API] Falha na chamada ao backend", {
+            requestUrl,
+            appOrigin: window.location.origin,
+            isNativeRuntimeActive,
+            error,
+          });
+
+          const detail = error instanceof Error ? error.message : String(error);
+          throw new Error(`Falha de rede ao acessar ${requestUrl}: ${detail}`);
         });
       },
     }),

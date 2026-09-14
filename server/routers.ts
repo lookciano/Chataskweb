@@ -22,14 +22,21 @@ import { getUniqueParticipantNames } from "./participant-name-matcher";
 import { sendPushNotificationForMessage, testPushNotification } from "./_core/notification";
 import { consumeDailyReportLimit } from "./_core/rateLimit";
 
-function toPublicUser(user: any) {
-  return {
+function toPublicUser(user: any, sessionToken?: string) {
+  const publicUser = {
     id: user.id,
     name: user.name,
     displayName: user.displayName,
     email: user.email,
     role: user.role,
   };
+
+  return sessionToken
+    ? {
+        ...publicUser,
+        sessionToken,
+      }
+    : publicUser;
 }
 
 async function assertRoomAccess(
@@ -189,7 +196,7 @@ export const appRouter = router({
         });
 
         await db.touchUserLastSignedIn(user.id);
-        return toPublicUser(user);
+        return toPublicUser(user, token);
       }),
     login: publicProcedure
       .input(z.object({
@@ -230,7 +237,7 @@ export const appRouter = router({
         });
 
         await db.touchUserLastSignedIn(user.id);
-        return toPublicUser(user);
+        return toPublicUser(user, token);
       }),
     register: publicProcedure
       .input(z.object({
@@ -272,7 +279,7 @@ export const appRouter = router({
           });
 
           await db.touchUserLastSignedIn(user!.id);
-          return toPublicUser(user!);
+          return toPublicUser(user!, token);
         }
 
         // New user
@@ -301,7 +308,7 @@ export const appRouter = router({
         });
 
         await db.touchUserLastSignedIn(user.id);
-        return toPublicUser(user);
+        return toPublicUser(user, token);
       }),
     firstAccess: publicProcedure
       .input(z.object({
@@ -336,7 +343,7 @@ export const appRouter = router({
         });
 
         await db.touchUserLastSignedIn(user.id);
-        return toPublicUser(user);
+        return toPublicUser(user, token);
       }),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
@@ -368,7 +375,7 @@ export const appRouter = router({
           ...cookieOptions,
           maxAge: ONE_YEAR_MS,
         });
-        return updated;
+        return toPublicUser(updated, token);
       }),
     registerDevice: protectedProcedure
       .input(z.object({
@@ -575,10 +582,11 @@ export const appRouter = router({
 
           return {
             success: true as const,
-            user: toPublicUser(result.user),
+            user: toPublicUser(result.user, sessionToken),
             chatRoomId: result.chatRoomId,
             roomName: result.roomName,
             alreadyMember: result.alreadyMember,
+            sessionToken,
           };
         } catch (error: any) {
           const msg = String(error?.message || error);

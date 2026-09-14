@@ -23,6 +23,12 @@ function parseCookieHeader(cookieHeader: string | undefined): Map<string, string
   return map;
 }
 
+function getBearerToken(authHeader: string | string[] | undefined): string | undefined {
+  const value = Array.isArray(authHeader) ? authHeader[0] : authHeader;
+  if (!value?.startsWith("Bearer ")) return undefined;
+  return value.slice("Bearer ".length).trim() || undefined;
+}
+
 export async function createContext(
   opts: CreateExpressContextOptions
 ): Promise<TrpcContext> {
@@ -30,7 +36,8 @@ export async function createContext(
 
   try {
     const cookies = parseCookieHeader(opts.req.headers.cookie);
-    const token = cookies.get(COOKIE_NAME);
+    const token =
+      cookies.get(COOKIE_NAME) ?? getBearerToken(opts.req.headers.authorization);
     const session = await verifyLocalSessionToken(token);
 
     if (session?.userId) {

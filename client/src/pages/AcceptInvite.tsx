@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useLocation, useRoute } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { persistSessionTokenFromResponse } from "@/_core/authSession";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -28,6 +29,8 @@ export default function AcceptInvite() {
 
   const acceptMutation = trpc.chat.acceptInvite.useMutation({
     onSuccess: async (result) => {
+      persistSessionTokenFromResponse(result);
+      persistSessionTokenFromResponse(result.user);
       utils.auth.me.setData(undefined, result.user);
       await utils.auth.me.invalidate();
       await utils.auth.listIdentities.invalidate();

@@ -1,4 +1,8 @@
 import { trpc } from "@/lib/trpc";
+import {
+  persistSessionTokenFromResponse,
+  setAuthSessionToken,
+} from "@/_core/authSession";
 import { useCallback, useMemo } from "react";
 
 type UseAuthOptions = {
@@ -23,6 +27,7 @@ export function useAuth(options?: UseAuthOptions) {
 
   const selectIdentityMutation = trpc.auth.selectIdentity.useMutation({
     onSuccess: async (user) => {
+      persistSessionTokenFromResponse(user);
       utils.auth.me.setData(undefined, user);
       await utils.auth.me.invalidate();
     },
@@ -30,24 +35,31 @@ export function useAuth(options?: UseAuthOptions) {
 
   const loginMutation = trpc.auth.login.useMutation({
     onSuccess: async (user) => {
+      persistSessionTokenFromResponse(user);
       utils.auth.me.setData(undefined, user);
+      await utils.auth.me.invalidate();
     },
   });
 
   const registerMutation = trpc.auth.register.useMutation({
     onSuccess: async (user) => {
+      persistSessionTokenFromResponse(user);
       utils.auth.me.setData(undefined, user);
+      await utils.auth.me.invalidate();
     },
   });
 
   const firstAccessMutation = trpc.auth.firstAccess.useMutation({
     onSuccess: async (user) => {
+      persistSessionTokenFromResponse(user);
       utils.auth.me.setData(undefined, user);
+      await utils.auth.me.invalidate();
     },
   });
 
   const logoutMutation = trpc.auth.logout.useMutation({
     onSuccess: () => {
+      setAuthSessionToken(null);
       utils.auth.me.setData(undefined, null);
     },
   });
@@ -86,6 +98,7 @@ export function useAuth(options?: UseAuthOptions) {
     } catch {
       // ignore
     } finally {
+      setAuthSessionToken(null);
       utils.auth.me.setData(undefined, null);
       await utils.auth.me.invalidate();
     }
