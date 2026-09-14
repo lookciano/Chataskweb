@@ -14,7 +14,12 @@
     "db:bootstrap": "node scripts/bootstrap-schema.mjs",
     "db:phase0-backup": "node scripts/export-phase0-backup.mjs",
     "db:phase1-backfill": "node scripts/phase1-backfill-membership.mjs",
-    "cap:sync": "vite build && cap sync android",
+    "web:build": "vite build",
+    "cap:sync": "vite build && cap sync",
+    "ios:sync": "vite build && cap sync ios",
+    "ios:open": "cap open ios",
+    "ios:deploy": "vite build && cap sync ios && cap open ios",
+    "android:sync": "vite build && cap sync android",
     "cap:open": "cap open android",
     "android:debug": "vite build && cap sync android && cd android && ./gradlew assembleDebug",
     "android:release": "vite build && cap sync android && cd android && ./gradlew assembleRelease"

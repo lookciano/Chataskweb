@@ -18,9 +18,20 @@
 
 ## After deploy
 1. Open app URL
-2. Choose existing identity (Luciano, Larissa, Sérgio, etc.)
-3. Confirm chat history + tasks still present
+2. Faça login com email e senha
+3. Confirme salas, histórico de chat e tarefas
+4. Se a mudança envolver autenticação, teste também o app iOS/Android depois que o deploy terminar
 
 ## Local
 - `.env.local` is gitignored and mirrors Render env for local runs
 - `pnpm dev` or `pnpm build && pnpm start`
+
+## Mobile dependency
+
+iOS e Android chamam a API publicada em:
+
+```text
+https://chataskweb.onrender.com/api/trpc
+```
+
+Por isso, alterações em `server/` precisam estar publicadas no Render antes de testar login ou tarefas nos apps nativos.

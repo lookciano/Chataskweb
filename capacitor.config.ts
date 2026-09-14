@@ -5,9 +5,9 @@ const config: CapacitorConfig = {
   appName: "Chat Task",
   webDir: "dist/public",
   server: {
-    // Backend público de Render: necesario para que o WebView iOS
-    // reporte essa origem e os cookies SameSite sejam persistidos corretamente.
-    hostname: "chataskweb.onrender.com",
+    // Host local do WebView. Mantenha diferente do backend real para que o
+    // Capacitor nao intercepte chamadas de API para chataskweb.onrender.com.
+    hostname: "localhost",
     androidScheme: "https",
     iosScheme: "https",
     allowNavigation: ["chataskweb.onrender.com"],

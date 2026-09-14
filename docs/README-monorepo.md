@@ -1,42 +1,129 @@
-# Documentação / Snapshot
+# Monorepo Chatask
 
-Estrutura e configurações nativas dos apps (Android e iOS) que **vivem no monorepo** `lookciano/Chataskweb` como fonte única de verdade.
+O repositório `lookciano/Chataskweb` é o repositório oficial e único para as três versões do Chatask:
 
-## Android (`/android`)
+- Web: React + Vite
+- iOS: Capacitor + Xcode
+- Android: Capacitor + Android Studio/Gradle
 
-Projeto nativo **Capacitor** versionado (código-fonte), package `com.gste.chattask`, Firebase `chataskandroid`.
+## Mapa das Pastas
 
-**Versionado no repo:**
-- `app/src/main/java/com/gste/chattask/MainActivity.java` — push (canal FCM) + WebView
-- `app/src/main/AndroidManifest.xml` — permissões de notificação
-- `app/build.gradle` — versão (versionCode/versionName) e **config de assinatura**
-- `build.gradle`, `gradle/wrapper/*`, `variables.gradle`, ícones/res, etc.
+| Pasta | Responsabilidade |
+| --- | --- |
+| `client/` | Interface Web compartilhada por Web, iOS e Android |
+| `server/` | API, tRPC, autenticação, push, IA e integrações |
+| `shared/` | Tipos e funções usadas no client e server |
+| `drizzle/` | Schema e migrations de banco |
+| `ios/` | Projeto nativo iOS gerado/gerenciado pelo Capacitor |
+| `android/` | Projeto nativo Android gerado/gerenciado pelo Capacitor |
+| `dist/` | Build gerado, não deve ser editado manualmente |
+| `docs/` | Documentação operacional do projeto |
 
-**NÃO se commita (segurança):**
-- Keystores: `android/chat-task.keystore`, `android/chattask_nova_chave.jks`
-- `google-services.json` (credencial Firebase — recoloque localmente após clonar)
-- `android/app/build/`, `android/local.properties`, assets gerados
+## Fonte da Verdade
 
-**Chave de assinatura de upload (Play):** `chattask_nova_chave.jks` precisa ser restaurada localmente
-antes de buildar release. Segue localizada em `~/Documents/App Luciano/ChaTask Android/signing/`.
+Edite funcionalidades em:
 
-## iOS (`docs/ios`)
+- `client/src/` para telas, componentes, hooks e estilos
+- `server/` para API e regras de backend
+- `shared/` para tipos/regras compartilhadas
+- `drizzle/` para schema/migrations
 
-Snapshot da configuração nativa iOS (referência). O projeto iOS completo vive localmente em
-`~/Documents/App Luciano/Chat Task/Repositorio/Chat Task IOS/` (não versionado aqui por conter
-`GoogleService-Info.plist` — credencial Firebase — e o Xcode project gerado).
+Evite editar diretamente arquivos gerados em:
 
-**Snapshot inclui:**
-- `App/AppDelegate.swift` — registro de push/APNs + Capacitor
-- `App/Info.plist` — UIBackgroundModes (remote-notification), ATS
-- `App/App.entitlements` — aps-environment
-- `xcodeproj/project.pbxproj` — team/assinatura (PGKDKS7ZG8), bundle `com.lookciano.chattask`
-- `capacitor.config.ts` — hostname onrender, PushNotifications presentationOptions
+- `dist/`
+- `ios/App/App/public/`
+- `android/app/src/main/assets/public/`
 
-> Após clonar, restaurar localmente: `GoogleService-Info.plist`, `.p8` do APNs, e o projeto `Chat Task IOS/`.
+Essas pastas são atualizadas por `pnpm ios:sync`, `pnpm android:sync` ou `pnpm cap:sync`.
 
-## Como atualizar o app (fluxo recomendado)
+## Configuração Capacitor
 
-1. **Web (fonte da verdade):** edite em `client/`, `server/`, `drizzle/` aqui no monorepo → `pnpm run build` → `git push` (Render auto-deploy).
-2. **Android:** `npx cap sync android` → build AAB → assinar → Play Console.
-3. **iOS:** sincronizar p/ `Chat Task IOS/` → archive via Xcode → App Store Connect.
+O arquivo central é `capacitor.config.ts`.
+
+Configuração importante:
+
+- `server.hostname` deve ficar como `localhost`
+- `allowNavigation` deve permitir `chataskweb.onrender.com`
+- O backend real chamado pelo app está em `client/src/main.tsx`
+
+Isso evita que o WebView iOS intercepte chamadas para `chataskweb.onrender.com`, problema que causava falhas de login.
+
+## Web/API
+
+Render publica a branch `main` deste repositório.
+
+Fluxo:
+
+```bash
+pnpm check
+pnpm build
+git push origin main
+```
+
+Depois do push, aguarde o deploy automático no Render.
+
+## iOS
+
+Projeto:
+
+```text
+ios/App/App.xcodeproj
+```
+
+Fluxo:
+
+```bash
+pnpm ios:sync
+pnpm ios:open
+```
+
+No Xcode:
+
+1. Selecione o target `App`
+2. Use o bundle id correto
+3. Faça `Product > Clean Build Folder`
+4. Rode no iPhone ou faça Archive para App Store Connect
+
+Arquivos sensíveis que não devem ir para Git:
+
+- `GoogleService-Info.plist`
+- certificados e chaves APNs
+- arquivos de DerivedData/build
+
+## Android
+
+Projeto:
+
+```text
+android/
+```
+
+Fluxo:
+
+```bash
+pnpm android:sync
+pnpm android:debug
+```
+
+Para release, restaure localmente o keystore e rode:
+
+```bash
+pnpm android:release
+```
+
+Arquivos sensíveis que não devem ir para Git:
+
+- `google-services.json`
+- `*.jks`
+- `*.keystore`
+- `android/local.properties`
+
+## Checklist Antes de Publicar
+
+- `pnpm check`
+- `pnpm build`
+- `pnpm ios:sync` se mudou mobile
+- `pnpm android:sync` se mudou mobile
+- Testar login no iOS quando houver mudança de autenticação
+- Testar login Web após deploy do Render
+
