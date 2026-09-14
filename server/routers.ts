@@ -147,7 +147,7 @@ export const appRouter = router({
      * Regular members enter via room invite link, not this picker.
      */
     listIdentities: adminProcedure.query(async () => {
-      return (await db.listSelectableUsers()).map(toPublicUser);
+      return (await db.listSelectableUsers()).map((user) => toPublicUser(user));
     }),
     selectIdentity: adminProcedure
       .input(z.object({
