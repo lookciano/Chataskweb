@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
-  appId: "com.gste.chattask",
+  appId: "com.lookciano.chattask",
   appName: "Chat Task",
   webDir: "dist/public",
   server: {
